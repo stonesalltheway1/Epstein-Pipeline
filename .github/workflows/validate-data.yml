@@ -1,0 +1,23 @@
+name: Validate Data
+
+on:
+  pull_request:
+    paths:
+      - "data/**"
+      - "contributions/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Validate contributed data
+        run: |
+          for f in $(git diff --name-only origin/main -- '*.json'); do
+            echo "Validating $f..."
+            epstein-pipeline validate "$f" || exit 1
+          done

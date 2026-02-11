@@ -1,0 +1,10 @@
+services:
+  pipeline:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./raw-pdfs:/app/raw-pdfs
+    environment:
+      - EPSTEIN_DATA_DIR=/app/data
+      - EPSTEIN_OUTPUT_DIR=/app/output
