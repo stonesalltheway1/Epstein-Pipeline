@@ -10,12 +10,10 @@ import httpx
 from rich.console import Console
 from rich.progress import (
     BarColumn,
-    DownloadColumn,
     MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TextColumn,
-    TransferSpeedColumn,
 )
 from rich.table import Table
 
@@ -132,32 +130,22 @@ class ArchiveDownloader:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        self._console.print(
-            f"[cyan]Collection:[/cyan] [bold]{collection}[/bold]"
-        )
+        self._console.print(f"[cyan]Collection:[/cyan] [bold]{collection}[/bold]")
         self._console.print(f"[cyan]Output directory:[/cyan] {output_dir.resolve()}")
         if media_types:
-            self._console.print(
-                f"[cyan]Media types:[/cyan] {', '.join(media_types)}"
-            )
+            self._console.print(f"[cyan]Media types:[/cyan] {', '.join(media_types)}")
         if file_extensions:
-            self._console.print(
-                f"[cyan]File extensions:[/cyan] {', '.join(file_extensions)}"
-            )
+            self._console.print(f"[cyan]File extensions:[/cyan] {', '.join(file_extensions)}")
         self._console.print()
 
         # Enumerate items in the collection
         items = self._search_collection(collection, media_types, max_items)
 
         if not items:
-            self._console.print(
-                f"[yellow]No items found in collection '{collection}'.[/yellow]"
-            )
+            self._console.print(f"[yellow]No items found in collection '{collection}'.[/yellow]")
             return output_dir
 
-        self._console.print(
-            f"[green]Found {len(items):,} item(s) to process.[/green]"
-        )
+        self._console.print(f"[green]Found {len(items):,} item(s) to process.[/green]")
         self._console.print()
 
         # Download files from each item
@@ -183,11 +171,9 @@ class ArchiveDownloader:
                 if file_extensions:
                     ext_set = {e.lower().lstrip(".") for e in file_extensions}
                     files = [
-                        f for f in files
-                        if any(
-                            f.get("name", "").lower().endswith(f".{ext}")
-                            for ext in ext_set
-                        )
+                        f
+                        for f in files
+                        if any(f.get("name", "").lower().endswith(f".{ext}") for ext in ext_set)
                     ]
 
                 for file_meta in files:
@@ -265,9 +251,7 @@ class ArchiveDownloader:
         """Search Archive.org for items in a collection."""
         query_parts = [f"collection:{collection}"]
         if media_types:
-            type_clause = " OR ".join(
-                f"mediatype:{mt}" for mt in media_types
-            )
+            type_clause = " OR ".join(f"mediatype:{mt}" for mt in media_types)
             query_parts.append(f"({type_clause})")
 
         query = " AND ".join(query_parts)
@@ -286,9 +270,7 @@ class ArchiveDownloader:
                     "output": "json",
                 }
 
-                self._console.print(
-                    f"[dim]Searching page {page}...[/dim]"
-                )
+                self._console.print(f"[dim]Searching page {page}...[/dim]")
 
                 resp = client.get(_SEARCH_URL, params=params)
                 resp.raise_for_status()
@@ -373,7 +355,5 @@ class ArchiveDownloader:
                     return written
 
         except httpx.HTTPError as exc:
-            self._console.print(
-                f"[red]Failed to download {dest.name}: {exc}[/red]"
-            )
+            self._console.print(f"[red]Failed to download {dest.name}: {exc}[/red]")
             return 0

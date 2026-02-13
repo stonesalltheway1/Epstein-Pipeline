@@ -66,9 +66,7 @@ class KaggleDownloader:
                 "  4. Set permissions: chmod 600 ~/.kaggle/kaggle.json (Linux/Mac)\n"
             )
 
-        self._console.print(
-            f"[cyan]Downloading dataset:[/cyan] [bold]{self.DATASET_SLUG}[/bold]"
-        )
+        self._console.print(f"[cyan]Downloading dataset:[/cyan] [bold]{self.DATASET_SLUG}[/bold]")
         self._console.print(f"[cyan]Output directory:[/cyan] {output_dir.resolve()}")
         self._console.print()
 
@@ -102,9 +100,7 @@ class KaggleDownloader:
                     f"Error details: {error_msg}"
                 ) from exc
 
-            raise RuntimeError(
-                f"Kaggle download failed: {error_msg}"
-            ) from exc
+            raise RuntimeError(f"Kaggle download failed: {error_msg}") from exc
 
         # Extract the ZIP if present
         zip_name = self.DATASET_SLUG.split("/")[-1] + ".zip"
@@ -118,9 +114,7 @@ class KaggleDownloader:
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(extract_dir)
 
-            self._console.print(
-                f"[green]Extracted to:[/green] {extract_dir.resolve()}"
-            )
+            self._console.print(f"[green]Extracted to:[/green] {extract_dir.resolve()}")
 
             # Count extracted files
             file_count = sum(1 for _ in extract_dir.rglob("*") if _.is_file())

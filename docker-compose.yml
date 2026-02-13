@@ -5,6 +5,11 @@ services:
       - ./data:/app/data
       - ./output:/app/output
       - ./raw-pdfs:/app/raw-pdfs
+      - sea-doughnut-data:/app/sea-doughnut
     environment:
       - EPSTEIN_DATA_DIR=/app/data
       - EPSTEIN_OUTPUT_DIR=/app/output
+      - EPSTEIN_SEA_DOUGHNUT_DIR=/app/sea-doughnut
+
+volumes:
+  sea-doughnut-data:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -94,9 +93,7 @@ class HuggingFaceDownloader:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        self._console.print(
-            f"[cyan]Downloading dataset:[/cyan] [bold]{repo_id}[/bold]"
-        )
+        self._console.print(f"[cyan]Downloading dataset:[/cyan] [bold]{repo_id}[/bold]")
         self._console.print(f"[cyan]Output directory:[/cyan] {output_dir.resolve()}")
         self._console.print()
 
@@ -138,9 +135,7 @@ class HuggingFaceDownloader:
         self._console.print()
         self._console.print(table)
         self._console.print()
-        self._console.print(
-            "[dim]To download: epstein-pipeline download hf <repo-id>[/dim]"
-        )
+        self._console.print("[dim]To download: epstein-pipeline download hf <repo-id>[/dim]")
         self._console.print()
 
     # ------------------------------------------------------------------
@@ -162,8 +157,7 @@ class HuggingFaceDownloader:
 
         file_count = sum(1 for f in local_dir.rglob("*") if f.is_file())
         self._console.print(
-            f"[bold green]Downloaded {file_count:,} files to "
-            f"{local_dir.resolve()}[/bold green]"
+            f"[bold green]Downloaded {file_count:,} files to {local_dir.resolve()}[/bold green]"
         )
         return local_dir
 
@@ -189,13 +183,9 @@ class HuggingFaceDownloader:
             files = response.json()
 
             if not files:
-                raise RuntimeError(
-                    f"Dataset '{repo_id}' appears to be empty."
-                )
+                raise RuntimeError(f"Dataset '{repo_id}' appears to be empty.")
 
-            self._console.print(
-                f"[cyan]Found {len(files)} file(s) to download.[/cyan]"
-            )
+            self._console.print(f"[cyan]Found {len(files)} file(s) to download.[/cyan]")
 
             with Progress(
                 TextColumn("[bold blue]{task.fields[filename]}"),
@@ -213,10 +203,7 @@ class HuggingFaceDownloader:
                     if file_info.get("type") == "directory":
                         continue
 
-                    file_url = (
-                        f"https://huggingface.co/datasets/{repo_id}"
-                        f"/resolve/main/{rfilename}"
-                    )
+                    file_url = f"https://huggingface.co/datasets/{repo_id}/resolve/main/{rfilename}"
                     dest = local_dir / rfilename
                     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -241,8 +228,7 @@ class HuggingFaceDownloader:
         file_count = sum(1 for f in local_dir.rglob("*") if f.is_file())
         self._console.print()
         self._console.print(
-            f"[bold green]Downloaded {file_count:,} files to "
-            f"{local_dir.resolve()}[/bold green]"
+            f"[bold green]Downloaded {file_count:,} files to {local_dir.resolve()}[/bold green]"
         )
         return local_dir
 
@@ -267,7 +253,6 @@ class HuggingFaceDownloader:
         # Not found in known list; assume it's a valid repo path under a
         # default namespace.
         self._console.print(
-            f"[yellow]'{name}' not in known datasets list. "
-            f"Trying as full repo ID...[/yellow]"
+            f"[yellow]'{name}' not in known datasets list. Trying as full repo ID...[/yellow]"
         )
         return name

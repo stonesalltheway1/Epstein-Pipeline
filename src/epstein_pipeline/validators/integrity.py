@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
@@ -18,11 +17,11 @@ from epstein_pipeline.models.registry import PersonRegistry
 
 # Bates range patterns used by DOJ/EFTA releases
 _BATES_PATTERNS = [
-    re.compile(r"^EFTA\d{8}$"),                          # EFTA00039025
-    re.compile(r"^EFTA\d{8}-EFTA\d{8}$"),                # EFTA00039025-EFTA00039030
-    re.compile(r"^[A-Z]{2,10}\d{4,10}$"),                # DEF00001234
+    re.compile(r"^EFTA\d{8}$"),  # EFTA00039025
+    re.compile(r"^EFTA\d{8}-EFTA\d{8}$"),  # EFTA00039025-EFTA00039030
+    re.compile(r"^[A-Z]{2,10}\d{4,10}$"),  # DEF00001234
     re.compile(r"^[A-Z]{2,10}\d{4,10}-[A-Z]{2,10}\d{4,10}$"),  # DEF00001234-DEF00001240
-    re.compile(r"^[A-Z]+-[A-Z]+-\d{4,10}$"),             # US-GOV-00001234
+    re.compile(r"^[A-Z]+-[A-Z]+-\d{4,10}$"),  # US-GOV-00001234
 ]
 
 # Reasonable date range for Epstein case documents
@@ -30,9 +29,7 @@ _MIN_YEAR = 1950
 _MAX_YEAR = 2026
 
 # ISO date pattern (YYYY-MM-DD, with optional month/day)
-_DATE_PATTERN = re.compile(
-    r"^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$"
-)
+_DATE_PATTERN = re.compile(r"^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$")
 
 
 class IntegrityChecker:
@@ -92,9 +89,7 @@ class IntegrityChecker:
 
         for doc_id, count in id_counts.items():
             if count > 1:
-                errors.append(
-                    f"DUPLICATE_ID: Document ID '{doc_id}' appears {count} times"
-                )
+                errors.append(f"DUPLICATE_ID: Document ID '{doc_id}' appears {count} times")
 
         return errors
 
@@ -107,19 +102,13 @@ class IntegrityChecker:
                 errors.append("EMPTY_FIELD: Document has empty 'id'")
 
             if not doc.title or not doc.title.strip():
-                errors.append(
-                    f"EMPTY_FIELD: Document '{doc.id}' has empty 'title'"
-                )
+                errors.append(f"EMPTY_FIELD: Document '{doc.id}' has empty 'title'")
 
             if not doc.source or not doc.source.strip():
-                errors.append(
-                    f"EMPTY_FIELD: Document '{doc.id}' has empty 'source'"
-                )
+                errors.append(f"EMPTY_FIELD: Document '{doc.id}' has empty 'source'")
 
             if not doc.category or not doc.category.strip():
-                errors.append(
-                    f"EMPTY_FIELD: Document '{doc.id}' has empty 'category'"
-                )
+                errors.append(f"EMPTY_FIELD: Document '{doc.id}' has empty 'category'")
 
         return errors
 
@@ -161,15 +150,24 @@ class IntegrityChecker:
 
             if day is not None and (day < 1 or day > 31):
                 errors.append(
-                    f"INVALID_DATE: Document '{doc.id}' has invalid day "
-                    f"{day} in date '{doc.date}'"
+                    f"INVALID_DATE: Document '{doc.id}' has invalid day {day} in date '{doc.date}'"
                 )
 
             # More precise day validation for known months
             if month is not None and day is not None:
                 days_in_month = {
-                    1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30,
-                    7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31,
+                    1: 31,
+                    2: 29,
+                    3: 31,
+                    4: 30,
+                    5: 31,
+                    6: 30,
+                    7: 31,
+                    8: 31,
+                    9: 30,
+                    10: 31,
+                    11: 30,
+                    12: 31,
                 }
                 max_days = days_in_month.get(month, 31)
                 if day > max_days:
@@ -197,9 +195,7 @@ class IntegrityChecker:
         # Add a summary if there are many missing persons
         if len(missing_ids) > 10:
             top_missing = missing_ids.most_common(10)
-            summary_lines = [
-                f"  {pid}: {count} references" for pid, count in top_missing
-            ]
+            summary_lines = [f"  {pid}: {count} references" for pid, count in top_missing]
             errors.append(
                 f"PERSON_SUMMARY: {len(missing_ids)} unique unknown person IDs. "
                 f"Top 10:\n" + "\n".join(summary_lines)
@@ -227,9 +223,7 @@ class IntegrityChecker:
                 continue
 
             # For EFTA ranges, check that start <= end
-            efta_range = re.match(
-                r"^(EFTA)(\d{8})-(EFTA)(\d{8})$", bates
-            )
+            efta_range = re.match(r"^(EFTA)(\d{8})-(EFTA)(\d{8})$", bates)
             if efta_range:
                 start_num = int(efta_range.group(2))
                 end_num = int(efta_range.group(4))
@@ -245,9 +239,7 @@ class IntegrityChecker:
     # Reporting
     # ------------------------------------------------------------------
 
-    def _print_summary(
-        self, documents: list[Document], errors: list[str]
-    ) -> None:
+    def _print_summary(self, documents: list[Document], errors: list[str]) -> None:
         """Print a formatted summary of integrity check results."""
         self._console.print()
         self._console.rule("[bold cyan]Integrity Check Results[/bold cyan]")
@@ -275,8 +267,12 @@ class IntegrityChecker:
         }
 
         all_checks = [
-            "DUPLICATE_ID", "EMPTY_FIELD", "INVALID_DATE",
-            "DATE_RANGE", "UNKNOWN_PERSON", "INVALID_BATES",
+            "DUPLICATE_ID",
+            "EMPTY_FIELD",
+            "INVALID_DATE",
+            "DATE_RANGE",
+            "UNKNOWN_PERSON",
+            "INVALID_BATES",
         ]
 
         for check_key in all_checks:
@@ -305,6 +301,4 @@ class IntegrityChecker:
                 f"[bold red]FAILED: {len(real_errors):,} error(s) found.[/bold red]"
             )
         else:
-            self._console.print(
-                "[bold green]PASSED: All integrity checks passed.[/bold green]"
-            )
+            self._console.print("[bold green]PASSED: All integrity checks passed.[/bold green]")

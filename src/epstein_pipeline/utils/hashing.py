@@ -10,7 +10,7 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 
 
 def normalize_text(text: str) -> str:
-    """Lowercase, strip leading/trailing whitespace, and collapse runs of whitespace to a single space."""
+    """Lowercase, strip whitespace, and collapse whitespace runs."""
     return _WHITESPACE_RUN.sub(" ", text.lower().strip())
 
 

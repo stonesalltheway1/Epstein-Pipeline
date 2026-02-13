@@ -198,8 +198,7 @@ class DojDownloader:
         """
         if dataset_num not in self.DATASETS:
             self._console.print(
-                f"[red]Unknown dataset number {dataset_num}. "
-                f"Valid range is 1-12.[/red]"
+                f"[red]Unknown dataset number {dataset_num}. Valid range is 1-12.[/red]"
             )
             return
 
@@ -208,17 +207,12 @@ class DojDownloader:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         self._console.print()
-        self._console.rule(
-            f"[bold cyan]DOJ EFTA Data Set {dataset_num}[/bold cyan]"
-        )
+        self._console.rule(f"[bold cyan]DOJ EFTA Data Set {dataset_num}[/bold cyan]")
         self._console.print(f"[bold]{meta.description}[/bold]")
         self._console.print(
-            f"Approximate size: [yellow]{meta.size_gb} GB[/yellow] "
-            f"({meta.approx_files:,} files)"
+            f"Approximate size: [yellow]{meta.size_gb} GB[/yellow] ({meta.approx_files:,} files)"
         )
-        self._console.print(
-            f"Suggested output directory: [green]{output_dir.resolve()}[/green]"
-        )
+        self._console.print(f"Suggested output directory: [green]{output_dir.resolve()}[/green]")
         self._console.print()
 
         # Direct DOJ download
@@ -233,8 +227,7 @@ class DojDownloader:
         self._console.print()
         self._console.print("   Using wget:")
         self._console.print(
-            f'   [dim]wget -O "{output_dir / f"Data_Set_{dataset_num}.zip"}" '
-            f'"{meta.doj_url}"[/dim]'
+            f'   [dim]wget -O "{output_dir / f"Data_Set_{dataset_num}.zip"}" "{meta.doj_url}"[/dim]'
         )
         self._console.print()
 
@@ -251,12 +244,8 @@ class DojDownloader:
 
         # Post-download instructions
         self._console.print("[bold]After downloading:[/bold]")
-        self._console.print(
-            f"   1. Extract the ZIP to: [green]{output_dir.resolve()}[/green]"
-        )
-        self._console.print(
-            "   2. Run the pipeline ingest command to process the files:"
-        )
+        self._console.print(f"   1. Extract the ZIP to: [green]{output_dir.resolve()}[/green]")
+        self._console.print("   2. Run the pipeline ingest command to process the files:")
         self._console.print(
             f"      [dim]epstein-pipeline ingest doj "
             f"--dataset {dataset_num} "

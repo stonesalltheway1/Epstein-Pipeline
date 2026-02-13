@@ -9,6 +9,18 @@ from epstein_pipeline.models.document import (
     Flight,
     Person,
     ProcessingResult,
+    VerificationStatus,
+)
+from epstein_pipeline.models.forensics import (
+    ExtractedEntity,
+    ExtractedImage,
+    RecoveredText,
+    Redaction,
+    RedactionAnalysisResult,
+    RedactionScore,
+    SeaDoughnutCorpus,
+    Transcript,
+    TranscriptSegment,
 )
 from epstein_pipeline.models.registry import PersonRegistry
 
@@ -18,8 +30,18 @@ __all__ = [
     "DocumentSource",
     "Email",
     "EmailContact",
+    "ExtractedEntity",
+    "ExtractedImage",
     "Flight",
     "Person",
     "PersonRegistry",
     "ProcessingResult",
+    "Redaction",
+    "RedactionAnalysisResult",
+    "RedactionScore",
+    "RecoveredText",
+    "SeaDoughnutCorpus",
+    "Transcript",
+    "TranscriptSegment",
+    "VerificationStatus",
 ]

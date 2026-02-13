@@ -116,9 +116,7 @@ class JsonExporter:
                 buckets["hf-efta-documents.json"].append(doc)
             elif "epstein-docs" in tags_lower:
                 buckets["epstein-docs-documents.json"].append(doc)
-            elif doc.source == "efta" or (
-                doc.batesRange and doc.batesRange.startswith("EFTA")
-            ):
+            elif doc.source == "efta" or (doc.batesRange and doc.batesRange.startswith("EFTA")):
                 buckets["efta-documents.json"].append(doc)
             else:
                 buckets["pipeline-documents.json"].append(doc)

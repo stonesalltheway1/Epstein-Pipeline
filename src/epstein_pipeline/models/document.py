@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------------
 # Enums as Literal unions (mirrors the TS string-union types)
 # ---------------------------------------------------------------------------
@@ -23,6 +22,23 @@ DocumentSource = Literal[
     "police",
     "estate",
     "efta",
+    "epstein-docs",
+    "kaggle",
+    "huggingface",
+    "sea-doughnut",
+    # DOJ dataset-specific EFTA sources (Sea_Doughnut v2)
+    "efta-ds1",
+    "efta-ds2",
+    "efta-ds3",
+    "efta-ds4",
+    "efta-ds5",
+    "efta-ds6",
+    "efta-ds7",
+    "efta-ds8",
+    "efta-ds9",
+    "efta-ds10",
+    "efta-ds11",
+    "efta-ds12",
     "other",
 ]
 
@@ -36,7 +52,17 @@ DocumentCategory = Literal[
     "government",
     "personal",
     "medical",
+    "property",
+    "corporate",
+    "intelligence",
     "other",
+]
+
+VerificationStatus = Literal[
+    "verified",
+    "unverified",
+    "disputed",
+    "redacted",
 ]
 
 
@@ -57,9 +83,13 @@ class Document(BaseModel):
     personIds: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     pdfUrl: str | None = None
+    sourceUrl: str | None = None
+    archiveUrl: str | None = None
     pageCount: int | None = None
     batesRange: str | None = None  # e.g. "EFTA00039025-EFTA00039030"
     ocrText: str | None = None
+    locationIds: list[str] = Field(default_factory=list)
+    verificationStatus: VerificationStatus | None = None
 
 
 class Person(BaseModel):

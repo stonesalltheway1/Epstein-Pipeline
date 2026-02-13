@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "epstein-pipeline"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open source document processing pipeline for the Epstein case files"
 readme = "README.md"
 license = {text = "MIT"}
@@ -12,9 +12,9 @@ requires-python = ">=3.10"
 authors = [
     {name = "Epstein Exposed", email = "contact@epsteinexposed.com"},
 ]
-keywords = ["epstein", "osint", "document-processing", "ocr", "pipeline"]
+keywords = ["epstein", "osint", "document-processing", "ocr", "pipeline", "forensics"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -37,17 +37,33 @@ dependencies = [
 ocr = [
     "docling>=2.0",
 ]
+pymupdf = [
+    "pymupdf>=1.24",
+]
 nlp = [
     "spacy>=3.7",
 ]
 ai = [
     "openai>=1.0",
 ]
+vision = [
+    "pymupdf>=1.24",
+    "Pillow>=10.0",
+]
+transcription = [
+    "faster-whisper>=1.0",
+]
+embeddings = [
+    "sentence-transformers>=3.0",
+    "torch>=2.0",
+    "numpy>=1.24",
+]
 all = [
-    "epstein-pipeline[ocr,nlp,ai]",
+    "epstein-pipeline[ocr,pymupdf,nlp,ai,vision,transcription,embeddings]",
 ]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",
     "ruff>=0.4",
     "mypy>=1.8",
 ]
@@ -69,6 +85,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
+ignore = ["N815"]  # mixedCase field names match site TypeScript types
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

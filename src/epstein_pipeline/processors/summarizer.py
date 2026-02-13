@@ -45,9 +45,7 @@ class Summarizer:
 
                 self._openai_client = openai.OpenAI()
             except ImportError:
-                logger.warning(
-                    "openai package not installed -- summarizer will use fallback"
-                )
+                logger.warning("openai package not installed -- summarizer will use fallback")
             except Exception as exc:
                 logger.warning("Failed to initialise OpenAI client: %s", exc)
 
@@ -77,10 +75,7 @@ class Summarizer:
         # Truncate very long inputs to avoid excessive token usage.
         # 12,000 chars is roughly 3-4K tokens.
         truncated = text[:12_000]
-        user_prompt = (
-            f"Summarize the following in {max_length} characters or fewer:\n\n"
-            f"{truncated}"
-        )
+        user_prompt = f"Summarize the following in {max_length} characters or fewer:\n\n{truncated}"
 
         try:
             if self.provider == "ollama":

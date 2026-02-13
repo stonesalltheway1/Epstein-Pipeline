@@ -85,9 +85,7 @@ class SchemaValidator:
 
         for idx, doc_data in enumerate(documents):
             if not isinstance(doc_data, dict):
-                errors.append(
-                    f"{path.name}[{idx}]: Expected object, got {type(doc_data).__name__}"
-                )
+                errors.append(f"{path.name}[{idx}]: Expected object, got {type(doc_data).__name__}")
                 continue
 
             doc_errors = self.validate_document(doc_data)
@@ -96,8 +94,7 @@ class SchemaValidator:
 
         # Print summary
         valid_count = len(documents) - sum(
-            1 for doc in documents
-            if isinstance(doc, dict) and self.validate_document(doc)
+            1 for doc in documents if isinstance(doc, dict) and self.validate_document(doc)
         )
 
         if errors:
@@ -136,14 +133,10 @@ class SchemaValidator:
         json_files = sorted(dir_path.glob("*.json"))
 
         if not json_files:
-            self._console.print(
-                f"[yellow]No JSON files found in {dir_path}[/yellow]"
-            )
+            self._console.print(f"[yellow]No JSON files found in {dir_path}[/yellow]")
             return {}
 
-        self._console.print(
-            f"[cyan]Validating {len(json_files)} JSON file(s) in {dir_path}[/cyan]"
-        )
+        self._console.print(f"[cyan]Validating {len(json_files)} JSON file(s) in {dir_path}[/cyan]")
         self._console.print()
 
         total_docs = 0

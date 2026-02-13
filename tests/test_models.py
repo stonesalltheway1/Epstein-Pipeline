@@ -1,10 +1,10 @@
 """Tests for Pydantic data models."""
 
-from epstein_pipeline.models import Document, Person, Email, EmailContact, Flight
+from epstein_pipeline.models import Document, Email, EmailContact, Flight, Person
 
 
 def test_document_minimal():
-    doc = Document(id="doc-001", title="Test Document")
+    doc = Document(id="doc-001", title="Test Document", source="other", category="other")
     assert doc.id == "doc-001"
     assert doc.personIds == []
     assert doc.tags == []
@@ -45,7 +45,7 @@ def test_email():
     email = Email(
         id="email-001",
         subject="Meeting tomorrow",
-        from_contact=EmailContact(name="John Doe", email="john@example.com"),
+        **{"from": EmailContact(name="John Doe", email="john@example.com")},
         to=[EmailContact(name="Jane Doe")],
         date="2005-03-15",
         body="Let's meet at 3pm.",
