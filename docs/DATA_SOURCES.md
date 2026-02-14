@@ -4,16 +4,48 @@ All publicly available data sources for the Epstein case files.
 
 ## DOJ EFTA Releases (Datasets 1-12)
 
-The U.S. Department of Justice released documents from the Jeffrey Epstein estate through the EFTA (Electronic File Transfer Agreement) process.
+The U.S. Department of Justice released documents from the Jeffrey Epstein estate through the EFTA (Electronic File Transfer Agreement) process via the SDNY U.S. Attorney's Office.
 
-| Dataset | Description | Approx. Size | Documents |
-|---------|-------------|--------------|-----------|
-| 1-8 | Initial releases (2023-2024) | Varies | ~4,000 |
-| 9 (VOL00009) | Largest single release | 57 GB | ~107,000 |
-| 10-12 | Subsequent releases | Varies | TBD |
+| Dataset | EFTA Range | Approx. Size | Documents | Content |
+|---------|-----------|--------------|-----------|---------|
+| 1 | 00000001–00003158 | ~2 GB | ~3,158 | Initial prosecution files |
+| 2 | 00003159–00003857 | ~0.5 GB | ~699 | Additional prosecution docs |
+| 3 | 00003858–00005586 | ~1 GB | ~1,729 | Investigation records |
+| 4 | 00005705–00008320 | ~2 GB | ~2,616 | Financial/legal documents |
+| 5 | 00008409–00008528 | ~0.1 GB | ~120 | Supplemental filings |
+| 6 | 00008529–00008998 | ~0.3 GB | ~470 | Court records |
+| 7 | 00009016–00009664 | ~0.5 GB | ~649 | Additional court records |
+| 8 | 00009676–00039023 | ~15 GB | ~29,348 | Media, spreadsheets, devices |
+| 9 | 00039025–01262781 | ~103 GB | ~1,223,757 | Largest release (prosecution working files) |
+| 10 | 01262782–02212882 | ~65 GB | ~950,101 | Financial subpoenas (DB, JPMC), telecom |
+| 11 | 02212883–02730262 | ~25 GB | ~517,380 | Additional financial/device data |
+| 12 | 02730265–02731783 | ~2 GB | ~1,519 | Final supplemental release |
+
+**Total:** ~218 GB, ~2.73M documents, ~1.38M unique EFTA numbers
 
 **Access:** [DOJ EFTA Releases](https://www.justice.gov/usao-sdny/united-states-v-jeffrey-epstein)
-**Mirrors:** [Epstein-Files repo](https://github.com/WikiLeaksLookup/Epstein-Files) (torrent magnets, checksums)
+**Mirrors:** [Archive.org collections](https://archive.org/search?query=Epstein+Dataset) (bulk downloads)
+
+### Three Bates Numbering Systems
+
+1. **EFTA########** — Public DOJ identifier (e.g., EFTA00039025)
+2. **SDNY_GM_########** — SDNY prosecution internal number (visible in OCR text of many documents)
+3. **DB-SDNY-########** — Deutsche Bank internal production number (in DS10 financial subpoena returns)
+
+## Sea_Doughnut Processed Databases
+
+Pre-processed research databases covering the complete DOJ release. See [SEA_DOUGHNUT.md](SEA_DOUGHNUT.md) for full schema documentation.
+
+| Database | Size | Content |
+|----------|------|---------|
+| full_text_corpus.db | 6.1 GB | 1,380,941 docs, 2,731,825 pages, FTS5 index |
+| transcripts.db | ~50 MB | 1,530 transcripts (375 with speech) |
+| redaction_analysis_v2.db | ~2 GB | 849,655 docs, 2,587,102 redactions |
+| concordance_metadata.db | ~580 MB | OPT/DAT concordance, SDNY bridge, provenance |
+| persons_registry.json | ~1 MB | 1,538 persons with aliases |
+
+- **Source:** [rhowardstone/Epstein-research-data](https://github.com/rhowardstone/Epstein-research-data)
+- **Import:** `epstein-pipeline import sea-doughnut --data-dir /path/to/data`
 
 ## Kaggle: Epstein Ranker Dataset
 
@@ -45,11 +77,11 @@ Media files (photos, videos, audio) from various Epstein-related collections.
 
 ## Community Sources
 
-| Source | Description | Contact |
-|--------|-------------|---------|
-| [rhowardstone/Epstein-research-data](https://github.com/rhowardstone/Epstein-research-data) | 519K processed PDFs, 107K entities, knowledge graph | u/Sea_Doughnut_8853 |
-| [Epstein-doc-explorer](https://github.com/nicholasgasior/Epstein-doc-explorer) | Graph explorer of emails | 497 stars |
-| [epstein-docs.github.io](https://epstein-docs.github.io) | 8,186 analyzed documents with AI summaries | Community |
+| Source | Description |
+|--------|-------------|
+| [rhowardstone/Epstein-research-data](https://github.com/rhowardstone/Epstein-research-data) | 1.38M processed documents, full-text search, provenance mapping |
+| [Epstein-doc-explorer](https://github.com/nicholasgasior/Epstein-doc-explorer) | Graph explorer of emails |
+| [epstein-docs.github.io](https://epstein-docs.github.io) | 8,186 analyzed documents with AI summaries |
 
 ## How to Add a New Source
 

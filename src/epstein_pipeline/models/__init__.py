@@ -12,8 +12,10 @@ from epstein_pipeline.models.document import (
     VerificationStatus,
 )
 from epstein_pipeline.models.forensics import (
+    ConcordanceSummary,
     ExtractedEntity,
     ExtractedImage,
+    ProvenanceRange,
     RecoveredText,
     Redaction,
     RedactionAnalysisResult,
@@ -25,6 +27,7 @@ from epstein_pipeline.models.forensics import (
 from epstein_pipeline.models.registry import PersonRegistry
 
 __all__ = [
+    "ConcordanceSummary",
     "Document",
     "DocumentCategory",
     "DocumentSource",
@@ -36,6 +39,7 @@ __all__ = [
     "Person",
     "PersonRegistry",
     "ProcessingResult",
+    "ProvenanceRange",
     "Redaction",
     "RedactionAnalysisResult",
     "RedactionScore",

@@ -109,6 +109,38 @@ class EmbeddingChunk(BaseModel):
     dimensions: int = 768
 
 
+class ProvenanceRange(BaseModel):
+    """A range in the EFTA provenance map.
+
+    Maps a contiguous block of EFTA document numbers to their origin
+    (e.g. Deutsche Bank subpoena, device extraction, prosecution files).
+    """
+
+    dataset: int
+    efta_start: str  # e.g. "EFTA01343849"
+    efta_end: str
+    source_description: str
+    source_category: str  # prosecution, financial_subpoena, etc.
+    doc_count: int = 0
+    page_count: int = 0
+    sdny_gm_start: str | None = None  # SDNY_GM Bates range if known
+    sdny_gm_end: str | None = None
+    confidence: str = "high"  # high, medium, inferred
+
+
+class ConcordanceSummary(BaseModel):
+    """Summary of concordance metadata for the corpus.
+
+    Concordance data links EFTA numbers to SDNY prosecution Bates numbers
+    and maps document provenance across all 12 DOJ dataset releases.
+    """
+
+    provenance_ranges: list[ProvenanceRange] = Field(default_factory=list)
+    sdny_bridge_count: int = 0  # EFTA ↔ SDNY_GM direct mappings
+    production_count: int = 0  # Discovery production entries
+    opt_document_count: int = 0  # OPT load file documents
+
+
 class SeaDoughnutCorpus(BaseModel):
     """Container for all data imported from Sea_Doughnut's databases."""
 
@@ -118,3 +150,4 @@ class SeaDoughnutCorpus(BaseModel):
     images: list[ExtractedImage] = Field(default_factory=list)
     transcripts: list[Transcript] = Field(default_factory=list)
     entities: list[ExtractedEntity] = Field(default_factory=list)
+    concordance: ConcordanceSummary | None = None
