@@ -140,6 +140,16 @@ class Flight(BaseModel):
     pilotIds: list[str] = Field(default_factory=list)
 
 
+class EntityResult(BaseModel):
+    """A single extracted entity from NER processing."""
+
+    entity_type: str  # PERSON, ORG, PHONE, EMAIL_ADDR, CASE_NUMBER, FLIGHT_ID, etc.
+    value: str
+    confidence: float | None = None
+    source: str = "spacy"  # 'spacy', 'gliner', 'regex'
+    span: str | None = None  # original text context
+
+
 class ProcessingResult(BaseModel):
     """Result of processing a single source file through the pipeline."""
 
@@ -148,3 +158,9 @@ class ProcessingResult(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     processing_time_ms: int
+
+    # v1.0 additions
+    ocr_confidence: float | None = None  # per-page average confidence
+    classified_category: str | None = None  # auto-classified document type
+    entities: list[EntityResult] = Field(default_factory=list)
+    duplicate_cluster_id: str | None = None  # assigned dedup cluster

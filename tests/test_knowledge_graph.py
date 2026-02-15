@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 from epstein_pipeline.models.document import Document
-from epstein_pipeline.processors.knowledge_graph import KnowledgeGraphBuilder
+from epstein_pipeline.processors.knowledge_graph import (
+    RELATIONSHIP_TYPES,
+    ExtractedRelationship,
+    KnowledgeGraphBuilder,
+)
 
 
 def test_build_graph_from_documents(sample_documents):
@@ -68,3 +72,26 @@ def test_empty_graph():
     graph = builder.build()
     assert graph.node_count == 0
     assert graph.edge_count == 0
+
+
+def test_relationship_types_defined():
+    """RELATIONSHIP_TYPES should contain expected types."""
+    assert "FLEW_WITH" in RELATIONSHIP_TYPES
+    assert "EMPLOYED_BY" in RELATIONSHIP_TYPES
+    assert "ASSOCIATED_WITH" in RELATIONSHIP_TYPES
+    assert len(RELATIONSHIP_TYPES) >= 7
+
+
+def test_extracted_relationship_dataclass():
+    """ExtractedRelationship should hold relationship data."""
+    rel = ExtractedRelationship(
+        person1="p-0001",
+        person2="p-0002",
+        relationship_type="FLEW_WITH",
+        confidence=0.85,
+        evidence_snippet="flew together on...",
+        document_id="doc-1",
+    )
+    assert rel.person1 == "p-0001"
+    assert rel.relationship_type == "FLEW_WITH"
+    assert rel.confidence == 0.85

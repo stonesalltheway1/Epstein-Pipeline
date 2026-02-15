@@ -179,8 +179,6 @@ def test_write_sqlite(mock_load, mock_settings, tmp_path):
     assert rows[0][2] == "Test chunk"
 
     # Check embedding blob
-    blob = conn.execute(
-        "SELECT embedding FROM document_chunks"
-    ).fetchone()[0]
+    blob = conn.execute("SELECT embedding FROM document_chunks").fetchone()[0]
     assert len(blob) == 16  # 4 floats × 4 bytes
     conn.close()

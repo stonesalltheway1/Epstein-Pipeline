@@ -22,7 +22,6 @@ from epstein_pipeline.importers.sea_doughnut import (
     efta_to_doj_url,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -110,25 +109,28 @@ def _create_redaction_db(tmp_path: Path) -> None:
         efta = f"EFTA{1000 + i:08d}"
         conn.execute(
             "INSERT INTO document_summary "
-            "(efta_number, total_redactions, bad_redactions, proper_redactions, has_recoverable_text) "
+            "(efta_number, total_redactions, bad_redactions,"
+            " proper_redactions, has_recoverable_text) "
             "VALUES (?, ?, ?, ?, ?)",
             (efta, 10, 2, 8, i < 5),
         )
 
     # A few recovered text entries
+    _redact_sql = (
+        "INSERT INTO redactions "
+        "(efta_number, page_number, hidden_text, confidence, redaction_type) "
+        "VALUES (?, ?, ?, ?, ?)"
+    )
     conn.execute(
-        "INSERT INTO redactions (efta_number, page_number, hidden_text, confidence, redaction_type) "
-        "VALUES (?, ?, ?, ?, ?)",
+        _redact_sql,
         ("EFTA00001001", 2, "Recovered text from page 2 of document", 0.85, "bad_overlay"),
     )
     conn.execute(
-        "INSERT INTO redactions (efta_number, page_number, hidden_text, confidence, redaction_type) "
-        "VALUES (?, ?, ?, ?, ?)",
+        _redact_sql,
         ("EFTA00001003", 1, "ab", 0.2, "bad_overlay"),  # too short, should be filtered
     )
     conn.execute(
-        "INSERT INTO redactions (efta_number, page_number, hidden_text, confidence, redaction_type) "
-        "VALUES (?, ?, ?, ?, ?)",
+        _redact_sql,
         ("EFTA00001005", 3, None, 0.0, "proper"),  # null text, should be filtered
     )
 
@@ -155,13 +157,29 @@ def _create_transcripts_db(tmp_path: Path) -> None:
 
     conn.execute(
         "INSERT INTO transcripts VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ("EFTA00001500", "/path/to/audio.m4a", "m4a", 120.5, "en",
-         "Hello world this is a test transcript", 7, "ds1"),
+        (
+            "EFTA00001500",
+            "/path/to/audio.m4a",
+            "m4a",
+            120.5,
+            "en",
+            "Hello world this is a test transcript",
+            7,
+            "ds1",
+        ),
     )
     conn.execute(
         "INSERT INTO transcripts VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ("EFTA00001501", "/path/to/silent.mp4", "mp4", 3625.0, "en",
-         "", 0, "ds9"),  # empty transcript, should be skipped
+        (
+            "EFTA00001501",
+            "/path/to/silent.mp4",
+            "mp4",
+            3625.0,
+            "en",
+            "",
+            0,
+            "ds9",
+        ),  # empty transcript, should be skipped
     )
 
     conn.commit()
@@ -191,9 +209,20 @@ def _create_concordance_db(tmp_path: Path) -> None:
     """)
     conn.execute(
         "INSERT INTO provenance_map VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (1, "EFTA00000001", "EFTA00003158", 1, 3158,
-         "SDNY_GM_000001", "SDNY_GM_003158",
-         "Initial prosecution files", "prosecution", 3158, 15000, "high"),
+        (
+            1,
+            "EFTA00000001",
+            "EFTA00003158",
+            1,
+            3158,
+            "SDNY_GM_000001",
+            "SDNY_GM_003158",
+            "Initial prosecution files",
+            "prosecution",
+            3158,
+            15000,
+            "high",
+        ),
     )
 
     conn.execute("""
@@ -205,7 +234,7 @@ def _create_concordance_db(tmp_path: Path) -> None:
     for i in range(100):
         conn.execute(
             "INSERT INTO sdny_efta_bridge VALUES (?, ?)",
-            (f"EFTA{i+1:08d}", f"SDNY_GM_{i+1:08d}"),
+            (f"EFTA{i + 1:08d}", f"SDNY_GM_{i + 1:08d}"),
         )
 
     conn.execute("""
@@ -255,9 +284,7 @@ def _create_persons_json(tmp_path: Path) -> None:
             "category": "unknown",
         },
     ]
-    (tmp_path / "persons_registry.json").write_text(
-        json.dumps(persons, indent=2), encoding="utf-8"
-    )
+    (tmp_path / "persons_registry.json").write_text(json.dumps(persons, indent=2), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
