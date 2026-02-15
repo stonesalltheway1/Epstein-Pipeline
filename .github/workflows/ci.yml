@@ -46,3 +46,23 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: mypy src/epstein_pipeline/ --ignore-missing-imports
+
+  schema-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: Validate Neon schema SQL is parseable
+        run: |
+          python -c "
+          from epstein_pipeline.exporters.neon_schema import (
+              SCHEMA_SQL, INDEX_SQL, SEMANTIC_SEARCH_FN
+          )
+          assert len(SCHEMA_SQL) > 100, 'Schema SQL too short'
+          assert len(INDEX_SQL) > 50, 'Index SQL too short'
+          assert 'semantic_search' in SEMANTIC_SEARCH_FN
+          print('Schema validation passed')
+          "

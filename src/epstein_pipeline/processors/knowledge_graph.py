@@ -1,9 +1,13 @@
-"""Knowledge graph builder.
+"""Knowledge graph builder with co-occurrence and LLM-based relationship extraction.
 
 Builds a weighted entity-relationship graph from pipeline output.
 Nodes: persons, organizations, locations, documents.
-Edges: co-occurrence, co-passengers, correspondence, financial.
-Export: GEXF (Gephi), JSON (D3.js-compatible).
+Edges: co-occurrence, co-passengers, correspondence, financial, LLM-extracted typed relationships.
+Export: GEXF (Gephi), JSON (D3.js-compatible), Neon Postgres.
+
+Relationship types for LLM extraction:
+FLEW_WITH, EMPLOYED_BY, ASSOCIATED_WITH, MENTIONED_IN,
+PARTY_TO, WITNESS_IN, DEFENDANT_IN
 """
 
 from __future__ import annotations
@@ -15,9 +19,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree.ElementTree import Element, ElementTree, SubElement
 
+from epstein_pipeline.config import Settings
 from epstein_pipeline.models.document import Document, Email, Flight
 
 logger = logging.getLogger(__name__)
+
+# Typed relationship labels for LLM extraction
+RELATIONSHIP_TYPES = [
+    "FLEW_WITH",
+    "EMPLOYED_BY",
+    "ASSOCIATED_WITH",
+    "MENTIONED_IN",
+    "PARTY_TO",
+    "WITNESS_IN",
+    "DEFENDANT_IN",
+    "FINANCIAL_LINK",
+    "FAMILY_MEMBER",
+    "LEGAL_COUNSEL",
+]
 
 
 @dataclass
@@ -36,9 +55,21 @@ class GraphEdge:
 
     source: str
     target: str
-    type: str  # "co-occurrence", "co-passenger", "correspondence", "financial"
+    type: str
     weight: float = 1.0
     attributes: dict = field(default_factory=dict)
+
+
+@dataclass
+class ExtractedRelationship:
+    """A relationship extracted by LLM from document text."""
+
+    person1: str
+    person2: str
+    relationship_type: str
+    confidence: float
+    evidence_snippet: str
+    document_id: str
 
 
 @dataclass
@@ -58,12 +89,19 @@ class KnowledgeGraph:
 
 
 class KnowledgeGraphBuilder:
-    """Build a knowledge graph from pipeline-processed data."""
+    """Build a knowledge graph from pipeline-processed data.
 
-    def __init__(self) -> None:
+    Supports two modes:
+    1. **Co-occurrence** (default) — edges from shared documents, flights, emails
+    2. **LLM extraction** (opt-in) — typed relationships via OpenAI/Anthropic API
+    """
+
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings
         self._nodes: dict[str, GraphNode] = {}
         self._edge_counter: dict[tuple[str, str, str], float] = Counter()
         self._edge_attrs: dict[tuple[str, str, str], dict] = defaultdict(dict)
+        self._extracted_relationships: list[ExtractedRelationship] = []
 
     def _add_node(self, node_id: str, label: str, node_type: str, **attrs) -> None:
         """Add or update a node."""
@@ -78,7 +116,6 @@ class KnowledgeGraphBuilder:
         self, source: str, target: str, edge_type: str, weight: float = 1.0, **attrs
     ) -> None:
         """Add or increment an edge."""
-        # Normalize edge direction (alphabetical order)
         if source > target:
             source, target = target, source
         key = (source, target, edge_type)
@@ -86,7 +123,7 @@ class KnowledgeGraphBuilder:
         self._edge_attrs[key].update(attrs)
 
     # ------------------------------------------------------------------
-    # Build methods
+    # Co-occurrence build methods
     # ------------------------------------------------------------------
 
     def add_documents(self, documents: list[Document]) -> None:
@@ -95,11 +132,9 @@ class KnowledgeGraphBuilder:
             if not doc.personIds:
                 continue
 
-            # Add person nodes
             for pid in doc.personIds:
                 self._add_node(pid, pid, "person")
 
-            # Add co-occurrence edges between all person pairs in each document
             pids = sorted(set(doc.personIds))
             for i in range(len(pids)):
                 for j in range(i + 1, len(pids)):
@@ -124,7 +159,7 @@ class KnowledgeGraphBuilder:
                         all_pax[i],
                         all_pax[j],
                         "co-passenger",
-                        weight=2.0,  # Flights are stronger signals
+                        weight=2.0,
                         flight_id=flight.id,
                         date=flight.date,
                     )
@@ -150,16 +185,190 @@ class KnowledgeGraphBuilder:
                     )
 
     def add_person_labels(self, persons: dict[str, str]) -> None:
-        """Update node labels with actual person names.
-
-        Parameters
-        ----------
-        persons:
-            Mapping of person_id to display name.
-        """
+        """Update node labels with actual person names."""
         for pid, name in persons.items():
             if pid in self._nodes:
                 self._nodes[pid].label = name
+
+    # ------------------------------------------------------------------
+    # LLM-based relationship extraction (opt-in)
+    # ------------------------------------------------------------------
+
+    def extract_relationships_llm(
+        self,
+        documents: list[Document],
+        person_names: dict[str, str] | None = None,
+        max_documents: int = 100,
+    ) -> list[ExtractedRelationship]:
+        """Extract typed relationships from document text using an LLM.
+
+        Only processes documents with at least 2 person IDs.
+        Results are cached to avoid re-processing.
+
+        Parameters
+        ----------
+        documents : list[Document]
+            Documents to extract relationships from.
+        person_names : dict[str, str] | None
+            Map of person_id to name for context.
+        max_documents : int
+            Maximum documents to process (LLM calls are expensive).
+        """
+        if not self.settings or not self.settings.kg_extract_relationships:
+            logger.info(
+                "LLM relationship extraction disabled (set EPSTEIN_KG_EXTRACT_RELATIONSHIPS=true)"
+            )
+            return []
+
+        # Filter to documents with multiple persons
+        candidates = [d for d in documents if len(d.personIds) >= 2 and (d.ocrText or d.summary)]
+        candidates = candidates[:max_documents]
+
+        if not candidates:
+            return []
+
+        logger.info("Extracting relationships from %d documents via LLM...", len(candidates))
+
+        for doc in candidates:
+            try:
+                rels = self._extract_from_document(doc, person_names or {})
+                self._extracted_relationships.extend(rels)
+
+                # Add extracted relationships as typed edges
+                for rel in rels:
+                    self._add_edge(
+                        rel.person1,
+                        rel.person2,
+                        rel.relationship_type,
+                        weight=rel.confidence * 3.0,  # LLM relationships weighted higher
+                        evidence_doc_id=rel.document_id,
+                        context_snippet=rel.evidence_snippet[:200],
+                        extraction_method="llm",
+                    )
+            except Exception as exc:
+                logger.warning("LLM extraction failed for %s: %s", doc.id, exc)
+
+        logger.info("Extracted %d relationships", len(self._extracted_relationships))
+        return self._extracted_relationships
+
+    def _extract_from_document(
+        self,
+        doc: Document,
+        person_names: dict[str, str],
+    ) -> list[ExtractedRelationship]:
+        """Extract relationships from a single document using the configured LLM."""
+        text = doc.ocrText or doc.summary or ""
+        if not text:
+            return []
+
+        # Truncate for LLM context window
+        text = text[:4000]
+
+        # Build person context
+        persons_in_doc = [f"- {pid}: {person_names.get(pid, pid)}" for pid in doc.personIds]
+        persons_context = "\n".join(persons_in_doc)
+
+        rel_types = ", ".join(RELATIONSHIP_TYPES)
+        prompt = (
+            "Analyze this document excerpt and identify relationships "
+            "between the people listed.\n\n"
+            f"People mentioned:\n{persons_context}\n\n"
+            f"Document text:\n{text}\n\n"
+            "For each relationship found, provide:\n"
+            "1. person1_id (from the list above)\n"
+            "2. person2_id (from the list above)\n"
+            f"3. relationship_type (one of: {rel_types})\n"
+            "4. confidence (0.0-1.0)\n"
+            "5. evidence (brief quote supporting this relationship)\n\n"
+            "Return as JSON array. If no relationships found, return [].\n"
+            'Example: [{"person1": "p-0001", "person2": "p-0002", '
+            '"type": "FLEW_WITH", "confidence": 0.9, '
+            '"evidence": "flew together on..."}]'
+        )
+
+        provider = self.settings.kg_llm_provider if self.settings else "openai"
+        model = self.settings.kg_llm_model if self.settings else "gpt-4o-mini"
+
+        try:
+            response_text = self._call_llm(prompt, provider, model)
+            return self._parse_llm_response(response_text, doc.id)
+        except Exception as exc:
+            logger.warning("LLM call failed: %s", exc)
+            return []
+
+    def _call_llm(self, prompt: str, provider: str, model: str) -> str:
+        """Call the configured LLM provider."""
+        if provider == "openai":
+            try:
+                from openai import OpenAI
+
+                client = OpenAI()
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=2000,
+                )
+                return response.choices[0].message.content or ""
+            except ImportError:
+                raise ImportError("openai package required. Install with: pip install openai")
+
+        elif provider == "anthropic":
+            try:
+                import anthropic
+
+                client = anthropic.Anthropic()
+                response = client.messages.create(
+                    model=model,
+                    max_tokens=2000,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return response.content[0].text if response.content else ""
+            except ImportError:
+                raise ImportError("anthropic package required. Install with: pip install anthropic")
+
+        raise ValueError(f"Unknown LLM provider: {provider}")
+
+    def _parse_llm_response(
+        self, response_text: str, document_id: str
+    ) -> list[ExtractedRelationship]:
+        """Parse the LLM's JSON response into ExtractedRelationship objects."""
+        try:
+            # Find JSON array in response
+            text = response_text.strip()
+            start = text.find("[")
+            end = text.rfind("]") + 1
+            if start == -1 or end == 0:
+                return []
+
+            data = json.loads(text[start:end])
+            relationships = []
+
+            for item in data:
+                rel_type = item.get("type", "ASSOCIATED_WITH")
+                if rel_type not in RELATIONSHIP_TYPES:
+                    rel_type = "ASSOCIATED_WITH"
+
+                relationships.append(
+                    ExtractedRelationship(
+                        person1=item.get("person1", ""),
+                        person2=item.get("person2", ""),
+                        relationship_type=rel_type,
+                        confidence=min(max(float(item.get("confidence", 0.5)), 0.0), 1.0),
+                        evidence_snippet=item.get("evidence", ""),
+                        document_id=document_id,
+                    )
+                )
+
+            return relationships
+
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.warning("Failed to parse LLM response: %s", exc)
+            return []
+
+    # ------------------------------------------------------------------
+    # Build
+    # ------------------------------------------------------------------
 
     def build(self) -> KnowledgeGraph:
         """Build the final knowledge graph."""
@@ -176,7 +385,6 @@ class KnowledgeGraphBuilder:
                 )
             )
 
-        # Sort edges by weight descending
         edges.sort(key=lambda e: e.weight, reverse=True)
 
         return KnowledgeGraph(

@@ -51,6 +51,224 @@ def cli() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# migrate (NEW — Phase 8)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--database-url",
+    envvar="EPSTEIN_NEON_DATABASE_URL",
+    required=True,
+    help="Neon Postgres connection URL.",
+)
+def migrate(database_url: str) -> None:
+    """Run schema migrations against a Neon Postgres database.
+
+    Creates all tables, indexes, and extensions needed by the pipeline.
+    Safe to run repeatedly (idempotent).
+
+    \b
+    Examples:
+      epstein-pipeline migrate --database-url postgresql://...@...neon.tech/epstein
+      EPSTEIN_NEON_DATABASE_URL=... epstein-pipeline migrate
+    """
+    from epstein_pipeline.exporters.neon_schema import run_migration_sync
+
+    console.print("[bold]Running Neon schema migration...[/bold]")
+    try:
+        run_migration_sync(database_url)
+        console.print("[green]Schema migration complete.[/green]")
+    except Exception as exc:
+        console.print(f"[red]Migration failed: {exc}[/red]")
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# export neon (NEW — Phase 1)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("export-neon")
+@click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option(
+    "--database-url",
+    envvar="EPSTEIN_NEON_DATABASE_URL",
+    required=True,
+    help="Neon Postgres connection URL.",
+)
+@click.option("--batch-size", type=int, default=100, help="Rows per upsert batch.")
+def export_neon(input_dir: Path, database_url: str, batch_size: int) -> None:
+    """Export processed documents to Neon Postgres with pgvector.
+
+    Reads processed JSON files and upserts them into the Neon database.
+
+    \b
+    Examples:
+      epstein-pipeline export-neon ./output/entities --database-url postgresql://...
+      EPSTEIN_NEON_DATABASE_URL=... epstein-pipeline export-neon ./output/entities
+    """
+    import asyncio
+
+    from epstein_pipeline.exporters.neon_export import NeonExporter
+    from epstein_pipeline.models.document import Document, ProcessingResult
+
+    settings = _load_settings()
+    settings.neon_database_url = database_url
+    settings.neon_batch_size = batch_size
+
+    json_files = sorted(input_dir.rglob("*.json"))
+    documents: list[Document] = []
+    for jf in json_files:
+        try:
+            raw = json.loads(jf.read_text(encoding="utf-8"))
+            if "document" in raw and raw["document"] is not None:
+                result = ProcessingResult.model_validate(raw)
+                if result.document:
+                    documents.append(result.document)
+            elif "id" in raw and "title" in raw:
+                documents.append(Document.model_validate(raw))
+        except Exception:
+            continue
+
+    if not documents:
+        console.print("[yellow]No documents found to export.[/yellow]")
+        return
+
+    console.print(f"Exporting [bold]{len(documents)}[/bold] documents to Neon Postgres")
+
+    exporter = NeonExporter(settings)
+    asyncio.run(exporter.upsert_documents(documents))
+    console.print("[green]Export complete.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# classify (NEW — Phase 6)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--output", "-o", type=click.Path(path_type=Path), default=None)
+@click.option("--model", type=str, default=None, help="Classification model.")
+@click.option("--threshold", type=float, default=0.6, help="Confidence threshold.")
+def classify(input_dir: Path, output: Path | None, model: str | None, threshold: float) -> None:
+    """Classify documents into categories using zero-shot classification.
+
+    \b
+    Examples:
+      epstein-pipeline classify ./output/ocr --output ./output/classified
+      epstein-pipeline classify ./output/ocr --threshold 0.7
+    """
+    settings = _load_settings()
+    out_dir = output or settings.output_dir / "classified"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    from epstein_pipeline.models.document import Document, ProcessingResult
+    from epstein_pipeline.processors.classifier import DocumentClassifier
+
+    if model:
+        settings.classifier_model = model
+    settings.classifier_confidence_threshold = threshold
+
+    json_files = sorted(input_dir.glob("*.json"))
+    documents: list[Document] = []
+    results_map: dict[str, ProcessingResult] = {}
+
+    for jf in json_files:
+        try:
+            raw = json.loads(jf.read_text(encoding="utf-8"))
+            if "document" in raw and raw["document"] is not None:
+                result = ProcessingResult.model_validate(raw)
+                if result.document:
+                    documents.append(result.document)
+                    results_map[jf.name] = result
+        except Exception:
+            continue
+
+    if not documents:
+        console.print("[yellow]No documents found.[/yellow]")
+        return
+
+    console.print(f"Classifying [bold]{len(documents)}[/bold] documents")
+
+    classifier = DocumentClassifier(settings)
+    classifications = classifier.classify_batch(documents)
+
+    for cls_result in classifications:
+        console.print(
+            f"  {cls_result.document_id}: "
+            f"[cyan]{cls_result.predicted_category}[/cyan] "
+            f"({cls_result.confidence:.0%})"
+        )
+
+    console.print(
+        f"[green]Classification complete. {len(classifications)} documents classified.[/green]"
+    )
+
+
+# ---------------------------------------------------------------------------
+# search (NEW — semantic search demo)
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.argument("query", type=str)
+@click.option(
+    "--database-url",
+    envvar="EPSTEIN_NEON_DATABASE_URL",
+    required=True,
+    help="Neon Postgres connection URL.",
+)
+@click.option("--limit", "-n", type=int, default=10, help="Number of results.")
+@click.option("--threshold", type=float, default=0.7, help="Similarity threshold.")
+def search(query: str, database_url: str, limit: int, threshold: float) -> None:
+    """Semantic search across document embeddings in Neon Postgres.
+
+    \b
+    Examples:
+      epstein-pipeline search "flight logs to Virgin Islands" --limit 5
+      epstein-pipeline search "financial transactions" --threshold 0.8
+    """
+    import asyncio
+
+    from epstein_pipeline.exporters.neon_export import NeonExporter
+
+    settings = _load_settings()
+    settings.neon_database_url = database_url
+
+    console.print(f'Searching for: [bold cyan]"{query}"[/bold cyan]')
+
+    exporter = NeonExporter(settings)
+    results = asyncio.run(exporter.semantic_search(query, limit=limit, threshold=threshold))
+
+    if not results:
+        console.print("[yellow]No results found.[/yellow]")
+        return
+
+    table = Table(title=f"Top {len(results)} Results", show_lines=True)
+    table.add_column("Document", style="cyan", max_width=30)
+    table.add_column("Chunk", justify="right")
+    table.add_column("Similarity", justify="right", style="bold")
+    table.add_column("Text", max_width=60)
+
+    for r in results:
+        table.add_row(
+            r["document_id"],
+            str(r["chunk_index"]),
+            f"{r['similarity']:.2%}",
+            r["chunk_text"][:100] + "...",
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# download (existing)
+# ---------------------------------------------------------------------------
+
+
 @cli.command()
 @click.argument("source", type=click.Choice(["doj", "kaggle", "huggingface", "archive"]))
 @click.option(
@@ -181,17 +399,25 @@ def _download_archive(out_dir: Path) -> None:
 @click.option(
     "--backend",
     "-b",
-    type=click.Choice(["docling", "pymupdf", "both"]),
+    type=click.Choice(["auto", "pymupdf", "surya", "olmocr", "docling"]),
     default=None,
-    help="OCR backend.",
+    help="OCR backend (default: auto = pymupdf → surya → docling fallback chain).",
 )
 def ocr(input_dir: Path, output: Path | None, workers: int | None, backend: str | None) -> None:
-    """OCR PDF files using Docling and/or PyMuPDF.
+    """OCR PDF files using multiple backends.
+
+    Backends:
+      auto    - PyMuPDF → Surya → Docling fallback chain (default)
+      pymupdf - Extract existing text layers only (fastest)
+      surya   - Surya OCR with confidence scoring (CPU/GPU)
+      olmocr  - Allen AI olmOCR 2 VLM (GPU required, highest quality)
+      docling - IBM Docling (fallback)
 
     \b
     Examples:
       epstein-pipeline ocr ./data/pdfs --output ./output/ocr
-      epstein-pipeline ocr ./pdfs --backend pymupdf --workers 8
+      epstein-pipeline ocr ./pdfs --backend surya --workers 8
+      epstein-pipeline ocr ./pdfs --backend olmocr
     """
     settings = _load_settings()
     out_dir = output or settings.output_dir / "ocr"
@@ -311,13 +537,40 @@ def extract_entities(
 @click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--output", "-o", type=click.Path(path_type=Path), default=None)
 @click.option("--threshold", "-t", type=float, default=0.90)
-def dedup(input_dir: Path, output: Path | None, threshold: float) -> None:
-    """Find duplicate documents."""
+@click.option(
+    "--mode",
+    type=click.Choice(["exact", "minhash", "semantic", "all"]),
+    default="all",
+    help="Dedup strategy: exact, minhash, semantic, or all (default).",
+)
+@click.option("--clusters", is_flag=True, default=False, help="Output duplicate clusters.")
+def dedup(
+    input_dir: Path, output: Path | None, threshold: float, mode: str, clusters: bool
+) -> None:
+    """Find duplicate documents using multiple strategies.
+
+    Strategies:
+      exact    - Content hash + title fuzzy + Bates overlap
+      minhash  - MinHash/LSH near-duplicate detection (O(n))
+      semantic - Embedding cosine similarity
+      all      - All three passes (recommended)
+
+    \b
+    Examples:
+      epstein-pipeline dedup ./output/ocr --mode all
+      epstein-pipeline dedup ./output/ocr --mode minhash --clusters
+    """
     settings = _load_settings()
     report_path = output or settings.output_dir / "dedup-report.json"
 
     from epstein_pipeline.models.document import Document, ProcessingResult
     from epstein_pipeline.processors.dedup import Deduplicator
+
+    # Apply CLI overrides to settings
+    settings.dedup_threshold = threshold
+    from epstein_pipeline.config import DedupMode
+
+    settings.dedup_mode = DedupMode(mode)
 
     json_files = sorted(input_dir.glob("*.json"))
     if not json_files:
@@ -337,9 +590,15 @@ def dedup(input_dir: Path, output: Path | None, threshold: float) -> None:
         except Exception:
             continue
 
-    console.print(f"Loaded {len(documents)} documents")
-    deduplicator = Deduplicator(threshold=threshold)
-    pairs = deduplicator.find_duplicates(documents)
+    console.print(f"Loaded {len(documents)} documents, mode={mode}")
+    deduplicator = Deduplicator(settings=settings)
+
+    if clusters:
+        dup_clusters = deduplicator.find_clusters(documents)
+        console.print(f"Found [bold]{len(dup_clusters)}[/bold] duplicate clusters")
+        pairs = deduplicator.find_duplicates(documents)
+    else:
+        pairs = deduplicator.find_duplicates(documents)
     console.print(f"Found [bold]{len(pairs)}[/bold] duplicate pairs (threshold={threshold})")
 
     if pairs:
@@ -613,9 +872,9 @@ def stats(input_dir: Path) -> None:
 @click.option(
     "--format",
     "fmt",
-    type=click.Choice(["ndjson", "sqlite"]),
+    type=click.Choice(["ndjson", "sqlite", "neon"]),
     default="ndjson",
-    help="Output format (default: ndjson).",
+    help="Output format: ndjson, sqlite, or neon (pgvector).",
 )
 @click.option(
     "--chunk-size",
@@ -704,8 +963,7 @@ def embed(
 
     total_chunks = sum(len(r.chunks) for r in results)
     console.print(
-        f"\n[green]Embedded {len(results)} documents"
-        f" ({total_chunks} chunks) → {output_dir}[/green]"
+        f"\n[green]Embedded {len(results)} documents ({total_chunks} chunks) → {output_dir}[/green]"
     )
 
 

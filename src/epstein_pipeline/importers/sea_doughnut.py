@@ -57,15 +57,15 @@ console = Console()
 
 DATASET_RANGES: list[tuple[int, int, int]] = [
     # (dataset, efta_start, efta_end)
-    (1,  1, 3158),
-    (2,  3159, 3857),
-    (3,  3858, 5586),
-    (4,  5705, 8320),
-    (5,  8409, 8528),
-    (6,  8529, 8998),
-    (7,  9016, 9664),
-    (8,  9676, 39023),
-    (9,  39025, 1262781),
+    (1, 1, 3158),
+    (2, 3159, 3857),
+    (3, 3858, 5586),
+    (4, 5705, 8320),
+    (5, 8409, 8528),
+    (6, 8529, 8998),
+    (7, 9016, 9664),
+    (8, 9676, 39023),
+    (9, 39025, 1262781),
     (10, 1262782, 2212882),
     (11, 2212883, 2730262),
     (12, 2730265, 2731783),
@@ -156,9 +156,12 @@ class SeaDoughnutImporter:
         if conn is None:
             return
         try:
-            tables = [r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()]
+            tables = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
             if "provenance_map" not in tables:
                 return
 
@@ -167,13 +170,15 @@ class SeaDoughnutImporter:
                 "SELECT efta_start_num, efta_end_num, source_category, "
                 "source_description FROM provenance_map ORDER BY efta_start_num"
             ):
-                self._provenance.append({
-                    "start": row[0], "end": row[1],
-                    "category": row[2], "description": row[3],
-                })
-            console.print(
-                f"  [dim]Loaded {len(self._provenance)} provenance ranges[/dim]"
-            )
+                self._provenance.append(
+                    {
+                        "start": row[0],
+                        "end": row[1],
+                        "category": row[2],
+                        "description": row[3],
+                    }
+                )
+            console.print(f"  [dim]Loaded {len(self._provenance)} provenance ranges[/dim]")
         finally:
             conn.close()
 
@@ -228,7 +233,10 @@ class SeaDoughnutImporter:
                 task = progress.add_task("Importing documents", total=total)
 
                 # Stream documents in order
-                doc_query = "SELECT efta_number, dataset, total_pages, file_size FROM documents ORDER BY efta_number"
+                doc_query = (
+                    "SELECT efta_number, dataset, total_pages, file_size"
+                    " FROM documents ORDER BY efta_number"
+                )
                 if limit:
                     doc_query += f" LIMIT {limit}"
 
@@ -337,9 +345,12 @@ class SeaDoughnutImporter:
             return []
 
         try:
-            tables = [r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()]
+            tables = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
 
             if "document_summary" not in tables:
                 console.print("  [yellow]No document_summary table found[/yellow]")
@@ -440,9 +451,12 @@ class SeaDoughnutImporter:
             conn = self._open_db(self.CORPUS_DB)
             if conn is None:
                 return []
-            tables = [r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()]
+            tables = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
             if "transcripts" not in tables:
                 conn.close()
                 console.print("  [yellow]No transcripts table found[/yellow]")
@@ -563,9 +577,12 @@ class SeaDoughnutImporter:
             return None
 
         try:
-            tables = [r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()]
+            tables = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
 
             provenance_ranges: list[ProvenanceRange] = []
             sdny_bridge_count = 0
@@ -579,18 +596,20 @@ class SeaDoughnutImporter:
                     "FROM provenance_map ORDER BY dataset, efta_start_num"
                 ):
                     rd = dict(row)
-                    provenance_ranges.append(ProvenanceRange(
-                        dataset=int(rd["dataset"]),
-                        efta_start=str(rd["efta_start"]),
-                        efta_end=str(rd["efta_end"]),
-                        source_description=str(rd.get("source_description", "")),
-                        source_category=str(rd.get("source_category", "")),
-                        doc_count=int(rd.get("doc_count", 0) or 0),
-                        page_count=int(rd.get("page_count", 0) or 0),
-                        sdny_gm_start=rd.get("sdny_gm_start"),
-                        sdny_gm_end=rd.get("sdny_gm_end"),
-                        confidence=str(rd.get("confidence", "high")),
-                    ))
+                    provenance_ranges.append(
+                        ProvenanceRange(
+                            dataset=int(rd["dataset"]),
+                            efta_start=str(rd["efta_start"]),
+                            efta_end=str(rd["efta_end"]),
+                            source_description=str(rd.get("source_description", "")),
+                            source_category=str(rd.get("source_category", "")),
+                            doc_count=int(rd.get("doc_count", 0) or 0),
+                            page_count=int(rd.get("page_count", 0) or 0),
+                            sdny_gm_start=rd.get("sdny_gm_start"),
+                            sdny_gm_end=rd.get("sdny_gm_end"),
+                            confidence=str(rd.get("confidence", "high")),
+                        )
+                    )
 
             if "sdny_efta_bridge" in tables:
                 sdny_bridge_count = conn.execute(
@@ -598,14 +617,12 @@ class SeaDoughnutImporter:
                 ).fetchone()[0]
 
             if "productions" in tables:
-                production_count = conn.execute(
-                    "SELECT COUNT(*) FROM productions"
-                ).fetchone()[0]
+                production_count = conn.execute("SELECT COUNT(*) FROM productions").fetchone()[0]
 
             if "opt_documents" in tables:
-                opt_document_count = conn.execute(
-                    "SELECT COUNT(*) FROM opt_documents"
-                ).fetchone()[0]
+                opt_document_count = conn.execute("SELECT COUNT(*) FROM opt_documents").fetchone()[
+                    0
+                ]
 
             summary = ConcordanceSummary(
                 provenance_ranges=provenance_ranges,
@@ -638,8 +655,13 @@ class SeaDoughnutImporter:
         console.print()
 
         # List available databases
-        for db_name in [self.CORPUS_DB, self.TRANSCRIPTS_DB, self.REDACTION_DB,
-                        self.CONCORDANCE_DB, self.PERSONS_JSON]:
+        for db_name in [
+            self.CORPUS_DB,
+            self.TRANSCRIPTS_DB,
+            self.REDACTION_DB,
+            self.CONCORDANCE_DB,
+            self.PERSONS_JSON,
+        ]:
             path = self.data_dir / db_name
             if path.exists():
                 size_mb = path.stat().st_size / 1e6
@@ -693,13 +715,10 @@ class SeaDoughnutImporter:
         console.print(f"  Persons:          {len(persons):,}")
         if concordance:
             console.print(
-                f"  Concordance:      {len(concordance.provenance_ranges)} "
-                f"provenance ranges"
+                f"  Concordance:      {len(concordance.provenance_ranges)} provenance ranges"
             )
             if concordance.sdny_bridge_count:
-                console.print(
-                    f"  SDNY_GM bridge:   {concordance.sdny_bridge_count:,} mappings"
-                )
+                console.print(f"  SDNY_GM bridge:   {concordance.sdny_bridge_count:,} mappings")
 
         # Save persons to output
         if output_dir and persons:

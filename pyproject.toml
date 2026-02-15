@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "epstein-pipeline"
-version = "0.2.0"
-description = "Open source document processing pipeline for the Epstein case files"
+version = "1.0.0"
+description = "World-class document processing pipeline for the Epstein case files — OCR, NER, dedup, embeddings, knowledge graph, Neon Postgres export"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     {name = "Epstein Exposed", email = "contact@epsteinexposed.com"},
 ]
-keywords = ["epstein", "osint", "document-processing", "ocr", "pipeline", "forensics"]
+keywords = ["epstein", "osint", "document-processing", "ocr", "pipeline", "forensics", "pgvector", "semantic-search"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -31,17 +31,27 @@ dependencies = [
     "pydantic-settings>=2.0",
     "rapidfuzz>=3.0",
     "httpx>=0.25",
+    "datasketch>=1.6",
 ]
 
 [project.optional-dependencies]
 ocr = [
     "docling>=2.0",
 ]
+ocr-surya = [
+    "surya-ocr>=0.8",
+]
+ocr-gpu = [
+    "olmocr>=0.1",
+]
 pymupdf = [
     "pymupdf>=1.24",
 ]
 nlp = [
     "spacy>=3.7",
+]
+nlp-gliner = [
+    "gliner>=0.2",
 ]
 ai = [
     "openai>=1.0",
@@ -58,12 +68,21 @@ embeddings = [
     "torch>=2.0",
     "numpy>=1.24",
 ]
+neon = [
+    "psycopg[binary]>=3.1",
+    "pgvector>=0.3",
+]
+classify = [
+    "transformers>=4.40",
+    "torch>=2.0",
+]
 all = [
-    "epstein-pipeline[ocr,pymupdf,nlp,ai,vision,transcription,embeddings]",
+    "epstein-pipeline[ocr,ocr-surya,pymupdf,nlp,nlp-gliner,ai,vision,transcription,embeddings,neon,classify]",
 ]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-asyncio>=0.23",
     "ruff>=0.4",
     "mypy>=1.8",
 ]
@@ -90,6 +109,7 @@ ignore = ["N815"]  # mixedCase field names match site TypeScript types
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.10"
