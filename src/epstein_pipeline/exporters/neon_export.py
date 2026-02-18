@@ -250,6 +250,98 @@ class NeonExporter:
         self._console.print(f"  [dim]Upserted {total:,} documents[/dim]")
         return total
 
+    # ── Upsert: Document hashes (integrity) ───────────────────────────────
+
+    async def upsert_document_hashes(
+        self,
+        hashes: list[dict[str, Any]],
+    ) -> int:
+        """Upsert document hashes into the document_hashes table.
+
+        Each hash dict should have: doc_id, sha256, dataset, file_path (optional),
+        file_size (optional).
+
+        Returns the number of rows upserted.
+        """
+        if not hashes:
+            return 0
+
+        pool = await self._get_pool()
+        total = 0
+
+        with _make_progress() as progress:
+            task = progress.add_task("Upserting document hashes", total=len(hashes))
+
+            for batch in _batches(hashes, self.batch_size):
+                async with pool.connection() as conn:
+                    async with conn.cursor() as cur:
+                        for h in batch:
+                            await cur.execute(
+                                """
+                                INSERT INTO document_hashes (
+                                    doc_id, sha256, dataset, file_path, file_size
+                                ) VALUES (
+                                    %(doc_id)s, %(sha256)s, %(dataset)s,
+                                    %(file_path)s, %(file_size)s
+                                )
+                                ON CONFLICT (doc_id) DO UPDATE SET
+                                    sha256 = EXCLUDED.sha256,
+                                    dataset = EXCLUDED.dataset,
+                                    file_path = EXCLUDED.file_path,
+                                    file_size = EXCLUDED.file_size
+                                """,
+                                {
+                                    "doc_id": h["doc_id"],
+                                    "sha256": h["sha256"],
+                                    "dataset": h.get("dataset", "unknown"),
+                                    "file_path": h.get("file_path"),
+                                    "file_size": h.get("file_size"),
+                                },
+                            )
+                    await conn.commit()
+
+                total += len(batch)
+                progress.advance(task, len(batch))
+
+        self._console.print(f"  [dim]Upserted {total:,} document hashes[/dim]")
+        return total
+
+    async def insert_document_change(
+        self,
+        doc_id: str,
+        change_type: str,
+        detected_by: str,
+        *,
+        dataset: str | None = None,
+        old_sha256: str | None = None,
+        new_sha256: str | None = None,
+        http_status: int | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Insert a single document change event."""
+        pool = await self._get_pool()
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO document_changes (
+                        doc_id, change_type, dataset, detected_by,
+                        old_sha256, new_sha256, http_status, details
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    """,
+                    (
+                        doc_id,
+                        change_type,
+                        dataset,
+                        detected_by,
+                        old_sha256,
+                        new_sha256,
+                        http_status,
+                        __import__("json").dumps(details or {}),
+                    ),
+                )
+            await conn.commit()
+
     # ── Upsert: Document-Person links ─────────────────────────────────────
 
     async def _upsert_document_persons(self, documents: list[Document]) -> int:
@@ -871,6 +963,7 @@ class NeonExporter:
         embedding_results: list[Any] | None = None,
         duplicate_clusters: list[dict[str, Any]] | None = None,
         relationships: list[dict[str, Any]] | None = None,
+        document_hashes: list[dict[str, Any]] | None = None,
     ) -> dict[str, int]:
         """Export all pipeline data to Neon Postgres.
 
@@ -937,6 +1030,12 @@ class NeonExporter:
 
             if relationships:
                 counts["relationships"] = await self.upsert_relationships(relationships)
+
+            # 4. Document integrity hashes
+            if document_hashes:
+                counts["document_hashes"] = await self.upsert_document_hashes(
+                    document_hashes
+                )
 
         except Exception:
             logger.exception("Error during Neon export")

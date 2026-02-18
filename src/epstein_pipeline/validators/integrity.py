@@ -14,6 +14,7 @@ from rich.table import Table
 
 from epstein_pipeline.models.document import Document
 from epstein_pipeline.models.registry import PersonRegistry
+from epstein_pipeline.utils.hashing import content_hash
 
 # Bates range patterns used by DOJ/EFTA releases
 _BATES_PATTERNS = [
@@ -72,6 +73,7 @@ class IntegrityChecker:
         errors.extend(self._check_dates(documents))
         errors.extend(self._check_person_ids(documents))
         errors.extend(self._check_bates_ranges(documents))
+        errors.extend(self._check_content_hashes(documents))
 
         # Print summary
         self._print_summary(documents, errors)
@@ -235,6 +237,30 @@ class IntegrityChecker:
 
         return errors
 
+    def _check_content_hashes(self, documents: list[Document]) -> list[str]:
+        """Check for duplicate content hashes (same text, different IDs)."""
+        errors: list[str] = []
+        hash_to_ids: dict[str, list[str]] = {}
+
+        for doc in documents:
+            # Only check documents with OCR text or summary
+            text = doc.ocrText or doc.summary or ""
+            if not text.strip():
+                continue
+
+            h = content_hash(text)
+            hash_to_ids.setdefault(h, []).append(doc.id)
+
+        for h, ids in hash_to_ids.items():
+            if len(ids) > 1:
+                errors.append(
+                    f"DUPLICATE_CONTENT: {len(ids)} documents share identical content hash "
+                    f"{h[:12]}...: {', '.join(ids[:5])}"
+                    + (f" (+{len(ids) - 5} more)" if len(ids) > 5 else "")
+                )
+
+        return errors
+
     # ------------------------------------------------------------------
     # Reporting
     # ------------------------------------------------------------------
@@ -264,6 +290,7 @@ class IntegrityChecker:
             "UNKNOWN_PERSON": "Person references",
             "PERSON_SUMMARY": "Person summary",
             "INVALID_BATES": "Bates format",
+            "DUPLICATE_CONTENT": "Duplicate content",
         }
 
         all_checks = [
@@ -273,6 +300,7 @@ class IntegrityChecker:
             "DATE_RANGE",
             "UNKNOWN_PERSON",
             "INVALID_BATES",
+            "DUPLICATE_CONTENT",
         ]
 
         for check_key in all_checks:
