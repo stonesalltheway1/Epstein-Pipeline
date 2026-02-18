@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ── Schema version tracking ──────────────────────────────────────────────────
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATION_SQL = """
 -- ============================================================================
@@ -248,6 +248,42 @@ CREATE TABLE IF NOT EXISTS locations (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ── Document integrity hashes ────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS document_hashes (
+    doc_id          TEXT PRIMARY KEY,
+    sha256          TEXT NOT NULL,
+    dataset         TEXT NOT NULL,
+    file_path       TEXT,
+    file_size       BIGINT,
+    verify_status   TEXT DEFAULT 'pending',
+    verified_at     TIMESTAMPTZ,
+    forensics       JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_dh_status ON document_hashes (verify_status);
+CREATE INDEX IF NOT EXISTS idx_dh_dataset ON document_hashes (dataset);
+
+-- ── Document change log (integrity events) ──────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS document_changes (
+    id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    doc_id          TEXT NOT NULL,
+    change_type     TEXT NOT NULL,
+    dataset         TEXT,
+    detected_at     TIMESTAMPTZ DEFAULT now(),
+    detected_by     TEXT NOT NULL,
+    old_sha256      TEXT,
+    new_sha256      TEXT,
+    http_status     INTEGER,
+    details         JSONB DEFAULT '{}'::jsonb,
+    lead_id         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_dc_doc ON document_changes (doc_id);
+CREATE INDEX IF NOT EXISTS idx_dc_type ON document_changes (change_type);
+CREATE INDEX IF NOT EXISTS idx_dc_date ON document_changes (detected_at DESC);
+
 -- ── Updated-at trigger ──────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION update_updated_at()
@@ -301,7 +337,7 @@ $$;
 -- ── Record migration version ────────────────────────────────────────────────
 
 INSERT INTO schema_migrations (version)
-VALUES (1)
+VALUES (2)
 ON CONFLICT (version) DO NOTHING;
 """
 
