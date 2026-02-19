@@ -178,11 +178,24 @@ See [DATA_SOURCES.md](docs/DATA_SOURCES.md) for all known public data sources.
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for details.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 **No coding required:** Report data quality issues, suggest sources, review processed data.
 
 **Code contributions:** Add downloaders, improve extraction, add export formats, fix bugs.
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute (setup, workflow, standards) |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards and expectations |
+| [SECURITY.md](SECURITY.md) | Security policy and data handling guidelines |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and design decisions |
+| [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) | All known public data sources |
+| [docs/PROCESSORS.md](docs/PROCESSORS.md) | Processor reference (OCR, NER, dedup, etc.) |
+| [docs/SITE_SYNC.md](docs/SITE_SYNC.md) | Syncing output to epsteinexposed.com |
+| [docs/SEA_DOUGHNUT.md](docs/SEA_DOUGHNUT.md) | Sea_Doughnut research data integration |
 
 ## Related Projects
 
