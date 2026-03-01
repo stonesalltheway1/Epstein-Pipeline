@@ -75,13 +75,13 @@ def _search_person(
     name: str,
     *,
     schema: str = "Person",
-    limit: int = 5,
+    limit: int = 10,
 ) -> list[SanctionsMatch]:
     """Search OpenSanctions for a person by name."""
     try:
         resp = client.get(
             _SEARCH_ENDPOINT,
-            params={"q": name, "schema": schema, "limit": limit},
+            params={"q": name, "schema": schema, "limit": limit, "fuzzy": "true"},
         )
         resp.raise_for_status()
         data = resp.json()
@@ -128,6 +128,7 @@ def _match_person(
     try:
         resp = client.post(
             _MATCH_ENDPOINT,
+            params={"threshold": 0.5, "algorithm": "best"},
             json={
                 "queries": {
                     "q": {

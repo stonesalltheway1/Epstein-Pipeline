@@ -181,6 +181,11 @@ epstein-pipeline search "query text here"       # Semantic search (pgvector)
 epstein-pipeline validate ./out/                # Data quality checks
 epstein-pipeline stats ./out/                   # Show processing statistics
 
+# -- Sanctions & PEP Cross-Reference --------------------------------
+epstein-pipeline check-sanctions               # Cross-check all persons vs OpenSanctions
+epstein-pipeline check-sanctions --threshold 0.3 --use-search  # Lower threshold, search API
+epstein-pipeline import-sanctions ./output/sanctions/opensanctions-results.json
+
 # -- Person Integrity Auditor -------------------------------------
 epstein-pipeline audit-persons                  # Full 5-phase audit
 epstein-pipeline audit-persons --phases dedup   # Single phase only
@@ -229,6 +234,32 @@ Builds entity relationship graphs from co-occurrence analysis and optional LLM-b
 ### Plist Forensics (`processors/plist_forensics.py`)
 Parses Apple plist files found in the Epstein device data for contact and metadata extraction.
 
+## OpenSanctions Cross-Reference
+
+Cross-references all 1,538 persons against 100+ global sanctions, PEP, and watchlist datasets via the [OpenSanctions API](https://opensanctions.org/).
+
+**Datasets checked:** OFAC SDN, EU Financial Sanctions, UN Security Council, UK HMT, Interpol Red Notices, PEP registries (Every Politician), ICIJ Offshore Leaks (mirrored), and 100+ more.
+
+```bash
+# Cross-check all persons (takes ~13 min at 0.5s/request rate limit)
+export EPSTEIN_OPENSANCTIONS_API_KEY="your-api-key"
+epstein-pipeline check-sanctions
+
+# Import results into Neon Postgres
+epstein-pipeline import-sanctions ./output/sanctions/opensanctions-results.json
+```
+
+**What it does:**
+1. Loads all persons from `data/persons-registry.json`
+2. Queries OpenSanctions `/match` endpoint for each person (fuzzy name matching)
+3. Flags persons as `is_sanctioned` (on any sanctions list) or `is_pep` (politically exposed)
+4. Saves detailed results to `output/sanctions/opensanctions-results.json`
+5. `import-sanctions` writes flags to the `persons` table and creates a `sanctions_matches` table in Neon
+
+**Output:** Each person gets: best match score, sanctions/PEP flags, matched datasets, and individual match details. Results are displayed in a Rich summary table with top matches ranked by score.
+
+Requires: `EPSTEIN_OPENSANCTIONS_API_KEY` (free for non-commercial use at [opensanctions.org](https://opensanctions.org/))
+
 ## Person Integrity Auditor
 
 Automated 5-phase data quality pipeline that scans all person records against the Neon database, Wikidata, Wikipedia, and Claude AI to detect issues before they reach users.
@@ -256,6 +287,7 @@ All configuration is via environment variables prefixed with `EPSTEIN_`. No cred
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `EPSTEIN_NEON_DATABASE_URL` | For DB export/search | Neon Postgres connection string |
+| `EPSTEIN_OPENSANCTIONS_API_KEY` | For sanctions check | OpenSanctions API key (free for non-commercial) |
 | `EPSTEIN_AUDITOR_ANTHROPIC_API_KEY` | For person audit | Claude API key (fact-checking) |
 | `EPSTEIN_AUDITOR_VOYAGE_API_KEY` | Optional | Voyage AI (semantic search in auditor) |
 | `EPSTEIN_AUDITOR_COHERE_API_KEY` | Optional | Cohere (reranking in auditor) |
