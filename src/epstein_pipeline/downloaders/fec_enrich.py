@@ -156,6 +156,10 @@ def enrich_candidate_names(
             for i, (cid, cnt) in enumerate(committees):
                 if i % 50 == 0 and i > 0:
                     console.print(f"  Progress: {i}/{len(committees)} committees...")
+                    # Save cache periodically
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(committee_cache, f, indent=2)
 
                 # Check cache first
                 if cid in committee_cache and committee_cache[cid].get("candidate_name"):
@@ -167,6 +171,13 @@ def enrich_candidate_names(
                             f"{_API_BASE}/committee/{cid}/",
                             params={"api_key": api_key},
                         )
+                        if resp.status_code == 429:
+                            # Rate limited — back off and retry once
+                            time.sleep(10.0)
+                            resp = client.get(
+                                f"{_API_BASE}/committee/{cid}/",
+                                params={"api_key": api_key},
+                            )
                         resp.raise_for_status()
                         data = resp.json()
                         results = data.get("results", [])
@@ -189,7 +200,7 @@ def enrich_candidate_names(
                                 info["candidate_state"] = r.get("state", "") or ""
 
                         committee_cache[cid] = info
-                        time.sleep(_RATE_LIMIT_DELAY)
+                        time.sleep(0.6)  # Slightly slower for bulk enrichment
                     except Exception as e:
                         errors += 1
                         if errors <= 5:
