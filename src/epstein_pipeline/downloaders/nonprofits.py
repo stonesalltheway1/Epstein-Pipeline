@@ -1197,6 +1197,47 @@ def download_nonprofits(
             console.print("  [dim]Skipped (no registry)[/dim]")
 
     # ── Save results ──
+    # ── Phase 4: NCCS Historical Backfill (2013-2018 financial gap) ──
+    console.print()
+    console.print("[bold cyan]Phase 4: NCCS Historical Backfill[/bold cyan]")
+    try:
+        from epstein_pipeline.downloaders.nccs import download_nccs_financials
+
+        org_eins = [o.ein for o in organizations]
+        nccs_data = download_nccs_financials(org_eins, years=range(2013, 2019), cache_dir=cache_dir)
+
+        nccs_merged = 0
+        for org in organizations:
+            ein = _format_ein(org.ein)
+            nccs_filings = nccs_data.get(ein, [])
+            if not nccs_filings:
+                continue
+
+            existing_years = {f.tax_year for f in org.filings}
+            for nf in nccs_filings:
+                if nf.tax_year in existing_years:
+                    # Merge financial data into existing filing that may be PDF-only
+                    existing = next((f for f in org.filings if f.tax_year == nf.tax_year), None)
+                    if existing and existing.total_revenue == 0 and nf.total_revenue > 0:
+                        existing.total_revenue = nf.total_revenue
+                        existing.total_expenses = nf.total_expenses or existing.total_expenses
+                        existing.total_assets = nf.total_assets or existing.total_assets
+                        existing.total_liabilities = nf.total_liabilities or existing.total_liabilities
+                        existing.grants_paid = nf.grants_paid or existing.grants_paid
+                        existing.contributions_received = nf.contributions_received or existing.contributions_received
+                        existing.officer_comp_total = nf.officer_comp_total or existing.officer_comp_total
+                        nccs_merged += 1
+                else:
+                    # New filing year from NCCS
+                    org.filings.append(nf)
+                    nccs_merged += 1
+
+        console.print(f"  NCCS backfill: [cyan]{nccs_merged}[/cyan] filings merged/added")
+    except ImportError:
+        console.print("  [yellow]NCCS module not available, skipping historical backfill[/yellow]")
+    except Exception as e:
+        console.print(f"  [yellow]NCCS backfill error: {e}[/yellow]")
+
     total_officers = sum(len(o.all_officers) for o in organizations)
     total_grants = sum(len(o.all_grants) for o in organizations)
     total_filings = sum(len(o.filings) for o in organizations)
