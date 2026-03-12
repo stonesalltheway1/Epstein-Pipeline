@@ -135,6 +135,27 @@ class Settings(BaseSettings):
     fec_max_pages: int = 5  # max API pages per person search
     fec_rate_limit: int = 120  # requests per minute
 
+    # ── IRS 990 Nonprofit settings ─────────────────────────────────────
+    nonprofit_seed_eins: list[str] = [
+        # Phase 1: Original seed orgs
+        "223496220", "133996471", "660789697", "455091884",
+        "133947890", "237320631", "311306419", "311318013",
+        "137265141", "474634539", "454757735", "850325494",
+        # Phase 2: Direct Epstein entities
+        "133643429", "261605864", "133528667", "811263733",
+        # Phase 2: Documented grant recipients
+        "030213226", "261636099", "542079811", "330783933",
+        "041425590", "810902953", "364793898",
+        # Phase 2: Associate foundations
+        "413185341", "466230671", "357119449", "134028567",
+        # Phase 2: Smaller documented recipients
+        "133156445", "582565917", "463485787",
+        # Phase 2: Mark Epstein Foundation
+        "387193282",
+    ]
+    nonprofit_max_filings: int = 10
+    nonprofit_fuzzy_threshold: int = 85
+
     # ── Person Auditor settings ────────────────────────────────────────
     auditor_anthropic_api_key: str | None = None
     auditor_anthropic_model: str = "claude-sonnet-4-6"  # Primary model for verification

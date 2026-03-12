@@ -1642,6 +1642,81 @@ def link_fec_donors(database_url: str, dry_run: bool) -> None:
     link_unmatched_donors(database_url, dry_run=dry_run)
 
 
+@cli.command("check-nonprofits")
+@click.option("--output", "-o", type=click.Path(path_type=Path), default=None,
+              help="Output directory for results JSON (default: output/nonprofits/)")
+@click.option("--registry", type=click.Path(exists=True, path_type=Path), default=None,
+              help="Path to persons-registry.json")
+@click.option("--seed-eins", default=None,
+              help="Comma-separated EINs to check (default: 12 known Epstein-linked)")
+@click.option("--search-terms", default=None,
+              help="Comma-separated org name searches on ProPublica")
+@click.option("--max-filings", type=int, default=10,
+              help="Max filing years per org (default 10)")
+@click.option("--skip-xml", is_flag=True,
+              help="Skip IRS XML download (ProPublica only)")
+def check_nonprofits(
+    output: Path | None,
+    registry: Path | None,
+    seed_eins: str | None,
+    search_terms: str | None,
+    max_filings: int,
+    skip_xml: bool,
+) -> None:
+    """Cross-reference Epstein network against IRS Form 990 nonprofit data.
+
+    Searches ProPublica Nonprofit Explorer + IRS bulk XML for officer
+    names, grants paid, related organizations, and financial summaries.
+
+    \b
+    Examples:
+      epstein-pipeline check-nonprofits
+      epstein-pipeline check-nonprofits --seed-eins 223496220,133996471,660789697
+      epstein-pipeline check-nonprofits --max-filings 3 --skip-xml
+      epstein-pipeline check-nonprofits --search-terms "Epstein,Wexner"
+    """
+    settings = _load_settings()
+    out_dir = output or settings.output_dir / "nonprofits"
+    reg_path = registry or settings.persons_registry_path
+
+    eins = [e.strip() for e in seed_eins.split(",")] if seed_eins else settings.nonprofit_seed_eins
+    terms = [t.strip() for t in search_terms.split(",")] if search_terms else None
+
+    from epstein_pipeline.downloaders.nonprofits import download_nonprofits
+
+    download_nonprofits(
+        out_dir,
+        persons_registry_path=reg_path,
+        seed_eins=eins,
+        search_terms=terms,
+        max_filings_per_org=max_filings,
+        fuzzy_threshold=settings.nonprofit_fuzzy_threshold,
+        skip_xml=skip_xml,
+    )
+
+
+@cli.command("import-nonprofits")
+@click.argument("results_path", type=click.Path(exists=True, path_type=Path))
+@click.option("--database-url", envvar="EPSTEIN_NEON_DATABASE_URL", required=True,
+              help="Neon Postgres URL")
+@click.option("--min-score", type=float, default=0.80,
+              help="Minimum match score to link officer→person (default 0.80)")
+def import_nonprofits_cmd(results_path: Path, database_url: str, min_score: float) -> None:
+    """Import IRS Form 990 nonprofit results into Neon Postgres.
+
+    Reads nonprofit-990-results.json and writes org, filing, officer,
+    and grant records to the database, then updates person records.
+
+    \b
+    Examples:
+      epstein-pipeline import-nonprofits ./output/nonprofits/nonprofit-990-results.json
+      epstein-pipeline import-nonprofits results.json --min-score 0.85
+    """
+    from epstein_pipeline.importers.nonprofits import import_nonprofits
+
+    import_nonprofits(results_path, database_url, min_match_score=min_score)
+
+
 @cli.command("audit-persons")
 @click.option("--phases", "-p", default="all",
               help="Comma-separated phases: dedup,wikidata,factcheck,coherence,score (default: all)")

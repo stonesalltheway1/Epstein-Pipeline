@@ -33,6 +33,14 @@ output/
 .DS_Store
 Thumbs.db
 
+# Data files (large, local-only)
+data/jmail/
+*.parquet
+
+# Test artifacts
+.coverage
+htmlcov/
+
 # Sensitive
 .env
 *.key
