@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from dataclasses import dataclass
 from typing import Any, Sequence
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from rich.console import Console
 from rich.progress import (
@@ -117,6 +119,66 @@ def _batches(items: Sequence[Any], size: int):
         yield items[i : i + size]
 
 
+# ── Connection string optimization ───────────────────────────────────────────
+
+
+def _optimize_connection_url(url: str) -> str:
+    """Add sslnegotiation=direct and connection timeout to Neon URLs.
+
+    PG17 sslnegotiation=direct saves ~13% on connection latency by skipping
+    the TLS negotiation roundtrip. Safe for all Neon endpoints.
+    """
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    if "sslnegotiation" not in params:
+        params["sslnegotiation"] = ["direct"]
+    if "connect_timeout" not in params:
+        params["connect_timeout"] = ["15"]
+    new_query = urlencode(params, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
+
+# ── Retry helper ─────────────────────────────────────────────────────────────
+
+_RETRIABLE_ERRORS = (
+    "connection",
+    "timed out",
+    "timeout",
+    "too many clients",
+    "server closed the connection",
+    "broken pipe",
+    "connection reset",
+    "08006",  # PG connection failure
+    "08003",  # PG connection does not exist
+    "57P01",  # PG admin shutdown
+    "53200",  # Neon out of memory
+    "53300",  # too many connections
+    "40001",  # serialization failure (retry-safe)
+)
+
+
+async def _with_retry(fn, max_retries: int = 5, base_delay: float = 1.0):
+    """Execute an async function with exponential backoff + jitter.
+
+    Retries only on transient/network errors. Raises on non-retriable errors.
+    """
+    for attempt in range(max_retries):
+        try:
+            return await fn()
+        except Exception as e:
+            msg = str(e).lower()
+            retriable = any(err in msg for err in _RETRIABLE_ERRORS)
+            if retriable and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)
+                logger.warning(
+                    "Retriable error (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1, max_retries, delay, e,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+
+
 # ── Main exporter class ──────────────────────────────────────────────────────
 
 
@@ -139,11 +201,14 @@ class NeonExporter:
             )
 
         self.settings = settings
-        self.database_url = settings.neon_database_url
+        self.database_url = _optimize_connection_url(settings.neon_database_url)
         self.pool_size = settings.neon_pool_size
         self.batch_size = settings.neon_batch_size
+        self.retry_max = settings.neon_retry_max
+        self.retry_base_delay = settings.neon_retry_base_delay
         self._pool: AsyncConnectionPool | None = None
         self._console = Console()
+        logger.info("Neon URL optimized (sslnegotiation=direct, connect_timeout=15)")
 
     # ── Connection pool management ────────────────────────────────────────
 
@@ -191,12 +256,14 @@ class NeonExporter:
             task = progress.add_task("Upserting documents", total=len(documents))
 
             for batch in _batches(documents, self.batch_size):
-                async with pool.connection() as conn:
-                    async with conn.cursor() as cur:
-                        for doc in batch:
-                            await cur.execute(
-                                """
-                                INSERT INTO documents (
+
+                async def _upsert_batch(batch=batch):
+                    async with pool.connection() as conn:
+                        async with conn.cursor() as cur:
+                            for doc in batch:
+                                await cur.execute(
+                                    """
+                                    INSERT INTO documents (
                                     id, title, date, source, category, summary,
                                     tags, pdf_url, source_url, archive_url,
                                     page_count, bates_range, ocr_text,
@@ -242,8 +309,9 @@ class NeonExporter:
                                     "verification_status": doc.verificationStatus,
                                 },
                             )
-                    await conn.commit()
+                        await conn.commit()
 
+                await _with_retry(_upsert_batch, self.retry_max, self.retry_base_delay)
                 total += len(batch)
                 progress.advance(task, len(batch))
 

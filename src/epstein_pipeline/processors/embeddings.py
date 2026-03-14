@@ -378,50 +378,66 @@ class EmbeddingProcessor:
         asyncio.run(self._write_neon_async(results, database_url))
 
     async def _write_neon_async(self, results: list[EmbeddingResult], database_url: str) -> None:
-        """Async implementation of Neon embedding write."""
+        """Async implementation of Neon embedding write.
+
+        Uses connection pool + retry with exponential backoff for resilience.
+        """
         try:
-            import psycopg
             from pgvector.psycopg import register_vector_async
+            from psycopg_pool import AsyncConnectionPool
         except ImportError:
             logger.error(
                 "psycopg and pgvector required. Install with: pip install 'epstein-pipeline[neon]'"
             )
             return
 
+        from epstein_pipeline.exporters.neon_export import _optimize_connection_url, _with_retry
+
         count = 0
         batch_size = self.settings.neon_batch_size
+        optimized_url = _optimize_connection_url(database_url)
 
-        async with await psycopg.AsyncConnection.connect(database_url) as conn:
-            await register_vector_async(conn)
+        pool = AsyncConnectionPool(
+            conninfo=optimized_url, min_size=1, max_size=4, open=False,
+        )
+        await pool.open()
 
+        try:
             for result in results:
                 for i in range(0, len(result.chunks), batch_size):
                     batch_chunks = result.chunks[i : i + batch_size]
                     batch_embeds = result.embeddings[i : i + batch_size]
 
-                    async with conn.cursor() as cur:
-                        for chunk, embedding in zip(batch_chunks, batch_embeds):
-                            await cur.execute(
-                                """
-                                INSERT INTO document_embeddings
-                                    (document_id, chunk_index, chunk_text, embedding, model_name)
-                                VALUES (%s, %s, %s, %s, %s)
-                                ON CONFLICT (document_id, chunk_index, model_name)
-                                DO UPDATE SET
-                                    chunk_text = EXCLUDED.chunk_text,
-                                    embedding = EXCLUDED.embedding
-                                """,
-                                (
-                                    chunk.document_id,
-                                    chunk.chunk_index,
-                                    chunk.chunk_text,
-                                    embedding,
-                                    result.model_name,
-                                ),
-                            )
-                            count += 1
+                    async def _write_batch(chunks=batch_chunks, embeds=batch_embeds):
+                        async with pool.connection() as conn:
+                            await register_vector_async(conn)
+                            async with conn.cursor() as cur:
+                                for chunk, embedding in zip(chunks, embeds):
+                                    await cur.execute(
+                                        """
+                                        INSERT INTO document_embeddings
+                                            (document_id, chunk_index, chunk_text,
+                                             embedding, model_name)
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (document_id, chunk_index, model_name)
+                                        DO UPDATE SET
+                                            chunk_text = EXCLUDED.chunk_text,
+                                            embedding = EXCLUDED.embedding
+                                        """,
+                                        (
+                                            chunk.document_id,
+                                            chunk.chunk_index,
+                                            chunk.chunk_text,
+                                            embedding,
+                                            result.model_name,
+                                        ),
+                                    )
+                            await conn.commit()
+                        return len(chunks)
 
-                    await conn.commit()
+                    count += await _with_retry(_write_batch, max_retries=5, base_delay=1.0)
+        finally:
+            await pool.close()
 
         logger.info("Wrote %d embedding chunks to Neon Postgres", count)
 

@@ -94,7 +94,9 @@ class Settings(BaseSettings):
     # ── Neon Postgres settings ───────────────────────────────────────────
     neon_database_url: str | None = None  # postgresql://...@...neon.tech/...
     neon_pool_size: int = 10
-    neon_batch_size: int = 100  # rows per upsert batch
+    neon_batch_size: int = 500  # rows per upsert batch (tuned for Neon Scale)
+    neon_retry_max: int = 5  # max retries for transient errors
+    neon_retry_base_delay: float = 1.0  # base delay in seconds (exponential backoff)
 
     # ── Document classifier settings ─────────────────────────────────────
     classifier_model: str = "facebook/bart-large-mnli"

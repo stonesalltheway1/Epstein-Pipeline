@@ -124,29 +124,20 @@ CREATE TABLE IF NOT EXISTS document_embeddings (
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_document ON document_embeddings (document_id);
 
--- IVFFlat index for fast approximate nearest neighbor search
--- NOTE: Requires at least ~1000 rows to be effective. Created with lists=100
--- which is good for up to ~100k vectors. Increase for larger collections.
--- We use a partial index creation approach: create if not exists.
+-- HNSW index for fast approximate nearest neighbor search.
+-- HNSW outperforms IVFFlat at all dataset sizes (no minimum row requirement,
+-- better recall, incremental inserts). Tuned for 2M+ vectors on Neon Scale.
+-- m=24 for better recall at scale; ef_construction=100 for index quality.
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_indexes
         WHERE indexname = 'idx_embeddings_vector_cosine'
     ) THEN
-        -- Only create if table has enough rows for IVFFlat
-        IF (SELECT count(*) FROM document_embeddings) >= 1000 THEN
-            CREATE INDEX idx_embeddings_vector_cosine
-            ON document_embeddings
-            USING ivfflat (embedding vector_cosine_ops)
-            WITH (lists = 100);
-        ELSE
-            -- Use HNSW for smaller datasets (no minimum row requirement)
-            CREATE INDEX idx_embeddings_vector_cosine
-            ON document_embeddings
-            USING hnsw (embedding vector_cosine_ops)
-            WITH (m = 16, ef_construction = 64);
-        END IF;
+        CREATE INDEX idx_embeddings_vector_cosine
+        ON document_embeddings
+        USING hnsw (embedding vector_cosine_ops)
+        WITH (m = 24, ef_construction = 100);
     END IF;
 END $$;
 
