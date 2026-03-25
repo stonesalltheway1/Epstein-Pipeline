@@ -74,6 +74,9 @@ class Transcript(BaseModel):
     language: str = "en"
     duration_seconds: float = 0.0
     segments: list[TranscriptSegment] = Field(default_factory=list)
+    speakers: list[str] = Field(default_factory=list)  # Identified speaker labels
+    speaker_map: dict[str, str] = Field(default_factory=dict)  # {"Speaker 1": "p-0042"}
+    diarized: bool = False  # Whether speaker diarization was applied
 
 
 class TranscriptSegment(BaseModel):
@@ -82,6 +85,9 @@ class TranscriptSegment(BaseModel):
     start: float  # seconds
     end: float  # seconds
     text: str
+    speaker: str | None = None  # "SPEAKER_00" or matched name
+    speaker_id: str | None = None  # "p-0042" if matched to person registry
+    confidence: float = 0.0  # Word-level or segment confidence
 
 
 # Fix forward reference

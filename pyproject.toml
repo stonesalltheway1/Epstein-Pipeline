@@ -63,6 +63,11 @@ vision = [
 transcription = [
     "faster-whisper>=1.0",
 ]
+transcription-diarize = [
+    "whisperx @ git+https://github.com/m-bain/whisperX.git",
+    "pyannote.audio>=3.1",
+    "torch>=2.0",
+]
 embeddings = [
     "sentence-transformers>=3.0",
     "torch>=2.0",
@@ -84,7 +89,7 @@ audit = [
     "psycopg[binary]>=3.1",
 ]
 all = [
-    "epstein-pipeline[ocr,ocr-surya,pymupdf,nlp,nlp-gliner,ai,vision,transcription,embeddings,neon,classify,audit]",
+    "epstein-pipeline[ocr,ocr-surya,pymupdf,nlp,nlp-gliner,ai,vision,transcription,transcription-diarize,embeddings,neon,classify,audit]",
 ]
 dev = [
     "pytest>=7.0",

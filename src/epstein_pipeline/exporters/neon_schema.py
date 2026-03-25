@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ── Schema version tracking ──────────────────────────────────────────────────
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MIGRATION_SQL = """
 -- ============================================================================
@@ -325,10 +325,71 @@ BEGIN
 END;
 $$;
 
+-- ══════════════════════════════════════════════════════════════════════════════
+-- v3: Video Depositions & International Court Documents
+-- ══════════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS video_depositions (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    deponent TEXT,
+    deponent_person_id TEXT,
+    case_name TEXT,
+    deposition_date DATE,
+    duration_seconds FLOAT,
+    source_type TEXT,
+    source_url TEXT,
+    video_url TEXT,
+    thumbnail_url TEXT,
+    language TEXT DEFAULT 'en',
+    speaker_count INTEGER DEFAULT 0,
+    segment_count INTEGER DEFAULT 0,
+    word_count INTEGER DEFAULT 0,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_depositions_deponent ON video_depositions (deponent_person_id);
+CREATE INDEX IF NOT EXISTS idx_depositions_date ON video_depositions (deposition_date);
+CREATE INDEX IF NOT EXISTS idx_depositions_case ON video_depositions (case_name);
+
+CREATE TABLE IF NOT EXISTS deposition_segments (
+    id SERIAL PRIMARY KEY,
+    deposition_id TEXT NOT NULL REFERENCES video_depositions(id) ON DELETE CASCADE,
+    segment_index INTEGER NOT NULL,
+    start_time FLOAT NOT NULL,
+    end_time FLOAT NOT NULL,
+    speaker TEXT,
+    speaker_person_id TEXT,
+    text TEXT NOT NULL,
+    embedding vector(768),
+    UNIQUE(deposition_id, segment_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dep_segments_deposition ON deposition_segments (deposition_id);
+CREATE INDEX IF NOT EXISTS idx_dep_segments_speaker ON deposition_segments (speaker_person_id);
+CREATE INDEX IF NOT EXISTS idx_dep_segments_embedding
+    ON deposition_segments USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 24, ef_construction = 100);
+
+-- Full-text search on segment text
+ALTER TABLE deposition_segments
+    ADD COLUMN IF NOT EXISTS tsv tsvector
+    GENERATED ALWAYS AS (to_tsvector('english', text)) STORED;
+CREATE INDEX IF NOT EXISTS idx_dep_segments_fts ON deposition_segments USING GIN (tsv);
+
+-- International court document columns on existing documents table
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS jurisdiction TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS language_code TEXT DEFAULT 'en';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS court_name TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS case_number_local TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_documents_jurisdiction ON documents (jurisdiction);
+
 -- ── Record migration version ────────────────────────────────────────────────
 
 INSERT INTO schema_migrations (version)
-VALUES (2)
+VALUES (3)
 ON CONFLICT (version) DO NOTHING;
 """
 

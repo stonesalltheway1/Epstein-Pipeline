@@ -270,7 +270,7 @@ def search(query: str, database_url: str, limit: int, threshold: float) -> None:
 
 
 @cli.command()
-@click.argument("source", type=click.Choice(["doj", "kaggle", "huggingface", "archive"]))
+@click.argument("source", type=click.Choice(["doj", "kaggle", "huggingface", "archive", "depositions"]))
 @click.option(
     "--output", "-o", type=click.Path(path_type=Path), default=None, help="Output directory."
 )
@@ -291,6 +291,9 @@ def download(source: str, output: Path | None) -> None:
         _download_huggingface(out_dir)
     elif source == "archive":
         _download_archive(out_dir)
+    elif source == "depositions":
+        from epstein_pipeline.downloaders.video_depositions import download_depositions
+        download_depositions(output_dir=out_dir)
 
 
 def _download_doj(out_dir: Path) -> None:
@@ -1158,12 +1161,26 @@ def extract_images(
 @click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--output", "-o", type=click.Path(path_type=Path), default=None)
 @click.option("--model", type=str, default=None, help="Whisper model size (e.g. large-v3).")
-def transcribe(input_dir: Path, output: Path | None, model: str | None) -> None:
-    """Transcribe audio/video files using faster-whisper.
+@click.option("--diarize", is_flag=True, help="Enable speaker diarization via WhisperX + pyannote.")
+@click.option("--hf-token", type=str, default=None, envvar="HF_TOKEN", help="HuggingFace token for pyannote.")
+@click.option("--min-speakers", type=int, default=None, help="Minimum expected speakers.")
+@click.option("--max-speakers", type=int, default=None, help="Maximum expected speakers.")
+def transcribe(
+    input_dir: Path,
+    output: Path | None,
+    model: str | None,
+    diarize: bool,
+    hf_token: str | None,
+    min_speakers: int | None,
+    max_speakers: int | None,
+) -> None:
+    """Transcribe audio/video files with optional speaker diarization.
 
     \b
     Examples:
-      epstein-pipeline transcribe ./media --output ./output/transcripts --model large-v3
+      epstein-pipeline transcribe ./media --output ./transcripts
+      epstein-pipeline transcribe ./media --diarize --hf-token $HF_TOKEN
+      epstein-pipeline transcribe ./media --diarize --min-speakers 2 --max-speakers 5
     """
     settings = _load_settings()
     out_dir = output or settings.output_dir / "transcripts"
@@ -1178,11 +1195,68 @@ def transcribe(input_dir: Path, output: Path | None, model: str | None) -> None:
         return
 
     console.print(f"Found [bold]{len(media_files)}[/bold] media files")
+    if diarize:
+        console.print("[bold cyan]Speaker diarization enabled (WhisperX + pyannote)[/bold cyan]")
 
     from epstein_pipeline.processors.transcriber import MediaTranscriber
 
-    transcriber = MediaTranscriber(model_size=model or settings.whisper_model)
+    transcriber = MediaTranscriber(
+        model_size=model or settings.whisper_model,
+        diarize=diarize,
+        hf_token=hf_token,
+        min_speakers=min_speakers,
+        max_speakers=max_speakers,
+    )
     transcriber.transcribe_batch(media_files, out_dir)
+
+
+# ---------------------------------------------------------------------------
+# download-depositions
+# ---------------------------------------------------------------------------
+
+
+@cli.command("download-depositions")
+@click.option("--output", "-o", type=click.Path(path_type=Path), default=None,
+              help="Output directory (default: E:/epstein-video-depositions/raw).")
+@click.option("--source", type=str, default=None,
+              help="Filter by source type: archive, justice-gov, ds10.")
+@click.option("--id", "source_id", type=str, default=None,
+              help="Download a specific deposition by ID.")
+@click.option("--catalog-ds10", type=click.Path(exists=True, path_type=Path), default=None,
+              help="Path to DS10 extracted dir — catalog media files only.")
+@click.option("--list", "list_only", is_flag=True, help="List all known deposition sources.")
+def download_depositions_cmd(
+    output: Path | None,
+    source: str | None,
+    source_id: str | None,
+    catalog_ds10: Path | None,
+    list_only: bool,
+) -> None:
+    """Download video depositions from known public sources.
+
+    \b
+    Examples:
+      epstein-pipeline download-depositions --list
+      epstein-pipeline download-depositions --catalog-ds10 E:/epstein-ds10/extracted
+      epstein-pipeline download-depositions --source archive
+      epstein-pipeline download-depositions --id vd-maxwell-interview-2025
+    """
+    from epstein_pipeline.downloaders.video_depositions import (
+        download_depositions,
+        list_sources,
+    )
+
+    if list_only:
+        list_sources()
+        return
+
+    out_dir = output or Path("E:/epstein-video-depositions/raw")
+    download_depositions(
+        output_dir=out_dir,
+        source_filter=source,
+        source_id=source_id,
+        ds10_path=catalog_ds10,
+    )
 
 
 # ---------------------------------------------------------------------------
