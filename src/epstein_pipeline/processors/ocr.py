@@ -5,7 +5,8 @@ Backends (ordered by speed):
 - ``surya``    -- Surya OCR (fast, structured, bounding boxes + confidence)
 - ``olmocr``   -- olmOCR / Allen AI VLM-based (GPU-heavy, handwriting support)
 - ``docling``  -- IBM Docling (table-aware, layout analysis)
-- ``auto``     -- Fallback chain: pymupdf -> surya -> docling
+- ``smoldocling`` -- SmolDocling-256M VLM (fast GPU, tables/charts/forms, 500MB VRAM)
+- ``auto``     -- Fallback chain: pymupdf -> smoldocling -> surya -> docling
 
 The ``auto`` mode tries backends in order until acceptable text is produced.
 olmOCR is excluded from auto mode due to high GPU cost; select it explicitly
@@ -38,7 +39,7 @@ from epstein_pipeline.models.document import Document, ProcessingResult
 logger = logging.getLogger(__name__)
 
 # ── Default fallback chain for auto mode (olmocr excluded) ──────────────
-_AUTO_CHAIN: list[str] = ["pymupdf", "surya", "docling"]
+_AUTO_CHAIN: list[str] = ["pymupdf", "smoldocling", "surya", "docling"]
 
 
 # ---------------------------------------------------------------------------
@@ -358,11 +359,110 @@ class DoclingBackend(OcrBackendBase):
 
 
 # ---------------------------------------------------------------------------
+# SmolDocling backend
+# ---------------------------------------------------------------------------
+
+
+class SmolDoclingBackend(OcrBackendBase):
+    """OCR using SmolDocling-256M vision-language model.
+
+    A 256M-parameter VLM that processes pages at ~0.35s/page on consumer GPU
+    with under 500MB VRAM. Handles code, charts, equations, tables, patents,
+    forms. Outputs DocTags format (convertible to Markdown/HTML/JSON).
+
+    Requires: pip install transformers torch Pillow
+    Model: ds4sd/SmolDocling-256M-preview
+    """
+
+    name = "smoldocling"
+    _model = None
+    _processor = None
+
+    def _ensure_model(self):
+        if SmolDoclingBackend._model is not None:
+            return
+
+        try:
+            from transformers import AutoProcessor, AutoModelForVision2Seq
+            import torch
+        except ImportError:
+            raise RuntimeError(
+                "transformers and torch are required for SmolDocling. "
+                "Install with: pip install transformers torch Pillow"
+            )
+
+        model_id = "ds4sd/SmolDocling-256M-preview"
+        logger.info("Loading SmolDocling-256M...")
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        SmolDoclingBackend._processor = AutoProcessor.from_pretrained(model_id)
+        SmolDoclingBackend._model = AutoModelForVision2Seq.from_pretrained(
+            model_id,
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        ).to(device)
+
+        logger.info("SmolDocling loaded on %s", device)
+
+    def extract(self, path: Path) -> OcrResult:
+        self._ensure_model()
+
+        try:
+            import torch
+            from PIL import Image
+            import fitz  # PyMuPDF for rendering PDF pages to images
+        except ImportError:
+            raise RuntimeError("PyMuPDF and Pillow are required for SmolDocling PDF processing")
+
+        model = SmolDoclingBackend._model
+        processor = SmolDoclingBackend._processor
+        device = next(model.parameters()).device
+
+        doc = fitz.open(str(path))
+        all_text_parts: list[str] = []
+        page_confidences: list[float] = []
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            # Render page as image at 150 DPI
+            pix = page.get_pixmap(dpi=150)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+            # Run through SmolDocling
+            inputs = processor(images=img, return_tensors="pt").to(device)
+            with torch.no_grad():
+                generated = model.generate(
+                    **inputs,
+                    max_new_tokens=2048,
+                    do_sample=False,
+                )
+            text = processor.batch_decode(generated, skip_special_tokens=True)[0]
+
+            if text and text.strip():
+                all_text_parts.append(text.strip())
+                page_confidences.append(self._heuristic_confidence(text))
+            else:
+                page_confidences.append(0.0)
+
+        doc.close()
+
+        full_text = "\n\n".join(all_text_parts)
+        avg_conf = sum(page_confidences) / max(len(page_confidences), 1)
+
+        return OcrResult(
+            text=full_text,
+            confidence=avg_conf,
+            backend_used=self.name,
+            page_confidences=page_confidences,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Backend registry
 # ---------------------------------------------------------------------------
 
 _BACKEND_CLASSES: dict[str, type[OcrBackendBase]] = {
     "pymupdf": PyMuPDFBackend,
+    "smoldocling": SmolDoclingBackend,
     "surya": SuryaBackend,
     "olmocr": OlmOcrBackend,
     "docling": DoclingBackend,

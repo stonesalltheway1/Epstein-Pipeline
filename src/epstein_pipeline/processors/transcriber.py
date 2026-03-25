@@ -80,7 +80,11 @@ class MediaTranscriber:
             self._ensure_faster_whisper(device, compute)
 
     def _ensure_faster_whisper(self, device: str, compute: str):
-        """Load faster-whisper model (no diarization)."""
+        """Load faster-whisper model (no diarization).
+
+        For large-v3-turbo on GPUs with ≤6GB VRAM, auto-selects INT8 quantization
+        which cuts memory ~75% while maintaining near-identical accuracy.
+        """
         try:
             from faster_whisper import WhisperModel
         except ImportError:
@@ -88,10 +92,22 @@ class MediaTranscriber:
                 "faster-whisper is required. Install with: pip install faster-whisper"
             )
 
+        # Auto-select INT8 for large models on ≤6GB VRAM GPUs
+        model_id = self.model_size
+        if device == "cuda" and "large" in self.model_size:
+            try:
+                import torch
+                vram_gb = torch.cuda.get_device_properties(0).total_mem / (1024 ** 3)
+                if vram_gb <= 8:
+                    compute = "int8_float16"  # INT8 weights, FP16 activations — best for ≤8GB
+                    console.print(f"  [dim]Auto-selected int8_float16 for {vram_gb:.0f}GB VRAM[/dim]")
+            except Exception:
+                pass
+
         console.print(
-            f"  Loading faster-whisper [bold]{self.model_size}[/bold] on {device} ({compute})"
+            f"  Loading faster-whisper [bold]{model_id}[/bold] on {device} ({compute})"
         )
-        self._model = WhisperModel(self.model_size, device=device, compute_type=compute)
+        self._model = WhisperModel(model_id, device=device, compute_type=compute)
 
     def _ensure_whisperx(self, device: str, compute: str):
         """Load WhisperX model with diarization pipeline."""

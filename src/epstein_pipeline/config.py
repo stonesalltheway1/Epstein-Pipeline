@@ -14,6 +14,7 @@ class OcrBackend(str, Enum):
 
     AUTO = "auto"
     PYMUPDF = "pymupdf"
+    SMOLDOCLING = "smoldocling"  # SmolDocling-256M — fast VLM, 0.35s/page, 500MB VRAM
     SURYA = "surya"
     OLMOCR = "olmocr"
     DOCLING = "docling"
@@ -99,7 +100,7 @@ class Settings(BaseSettings):
     neon_retry_base_delay: float = 1.0  # base delay in seconds (exponential backoff)
 
     # ── Document classifier settings ─────────────────────────────────────
-    classifier_model: str = "facebook/bart-large-mnli"
+    classifier_model: str = "knowledgator/gliclass-modern-base-v3.0"
     classifier_confidence_threshold: float = 0.6
 
     # ── Knowledge graph settings ─────────────────────────────────────────
@@ -119,7 +120,7 @@ class Settings(BaseSettings):
     summarizer_model: str = "llama3.2"
 
     # ── Transcription ────────────────────────────────────────────────────
-    whisper_model: str = "large-v3"
+    whisper_model: str = "large-v3-turbo"
 
     # ── OpenSanctions settings ──────────────────────────────────────────
     opensanctions_api_key: str | None = None
