@@ -3,22 +3,33 @@
 ## Pipeline Overview
 
 ```
-Raw DOJ PDFs
+DOJ EFTA (DS1–DS12) / Kaggle / HuggingFace / Archive.org / justice.gov
     │
     ▼
 ┌──────────────────────────────────────────────────────────┐
-│  OCR (multi-backend)                                     │
-│  PyMuPDF → Surya → olmOCR 2 → Docling                   │
-│  Per-page confidence scoring, fallback chain             │
+│  OCR (multi-backend fallback chain)                      │
+│  PyMuPDF → SmolDocling-256M → Surya → olmOCR → Docling   │
+│  Per-page confidence scoring, automatic backend selection│
 └──────────────────────┬───────────────────────────────────┘
                        │
     ┌──────────────────┼──────────────────┐
     ▼                  ▼                  ▼
 ┌────────────┐  ┌────────────┐  ┌──────────────────┐
-│ NER        │  │ Dedup      │  │ Classifier       │
-│ spaCy trf  │  │ Hash →     │  │ Zero-shot BART   │
-│ + GLiNER   │  │ MinHash →  │  │ 12 doc categories│
-│ + regex    │  │ Semantic   │  │                  │
+│ Transcribe │  │ NER        │  │ Classifier       │
+│ WhisperX / │  │ spaCy trf  │  │ GLiClass-        │
+│ faster-    │  │ + GLiNER   │  │ ModernBERT       │
+│ whisper    │  │ + regex    │  │ (50x faster)     │
+│ + pyannote │  │            │  │ 12 categories    │
+└─────┬──────┘  └─────┬──────┘  └────────┬─────────┘
+      │               │                  │
+    ┌─┼───────────────┼──────────────────┘
+    │ │               │
+    ▼ ▼               ▼
+┌────────────┐  ┌────────────┐  ┌──────────────────┐
+│ Structured │  │ Dedup      │  │ Summarizer       │
+│ Extraction │  │ Hash →     │  │ LLM-based        │
+│ Instructor │  │ MinHash →  │  │ Redaction        │
+│ + Pydantic │  │ Semantic   │  │ Analysis         │
 └─────┬──────┘  └─────┬──────┘  └────────┬─────────┘
       │               │                  │
       └───────────────┼──────────────────┘
@@ -49,24 +60,30 @@ src/epstein_pipeline/
 │   ├── doj.py                      # DOJ EFTA dataset downloads (DS1-DS12)
 │   ├── kaggle.py                   # Kaggle Epstein Ranker dataset
 │   ├── huggingface.py              # HuggingFace datasets (emails, filings)
-│   └── archive.py                  # Archive.org media collections
+│   ├── archive.py                  # Archive.org media collections
+│   ├── video_depositions.py        # Video deposition downloader (justice.gov, C-SPAN, Archive.org)
+│   ├── opensanctions.py            # OpenSanctions cross-reference data
+│   ├── icij.py                     # ICIJ Offshore Leaks network data
+│   ├── fec.py                      # FEC political donation records
+│   └── nonprofits.py               # IRS 990 tax-exempt organization data
 │
 ├── processors/                     # Core processing pipeline
-│   ├── ocr.py                      # Multi-backend OCR (Docling, Surya, olmOCR, PyMuPDF)
+│   ├── ocr.py                      # Multi-backend OCR (PyMuPDF → SmolDocling → Surya → Docling)
 │   ├── pymupdf_extractor.py        # PyMuPDF-specific text/image extraction
+│   ├── transcriber.py              # Audio/video transcription (faster-whisper / WhisperX + pyannote)
 │   ├── entities.py                 # spaCy + GLiNER NER with person registry matching
-│   ├── person_linker.py            # Fast substring person linking (no spaCy dep)
+│   ├── person_linker.py            # Fast substring person linking (rapidfuzz)
+│   ├── structured_extractor.py     # LLM structured extraction (Instructor + Pydantic)
+│   ├── classifier.py               # Document classification (GLiClass-ModernBERT / BART fallback)
 │   ├── confidence.py               # Numeric confidence scores for entity matches
 │   ├── dedup.py                    # Three-pass dedup (hash → MinHash → semantic)
-│   ├── classifier.py               # Zero-shot BART document classification
 │   ├── chunker.py                  # Semantic text chunking (paragraph-aware)
 │   ├── embeddings.py               # nomic-embed-text-v2-moe vector generation
 │   ├── knowledge_graph.py          # Entity relationship graph (JSON + GEXF)
 │   ├── redaction.py                # Redaction detection + recovery analysis
 │   ├── image_extractor.py          # PDF image extraction + optional AI description
 │   ├── plist_forensics.py          # Apple Mail PLIST metadata extraction
-│   ├── summarizer.py               # AI document summarization (Ollama / OpenAI)
-│   └── transcriber.py              # Audio/video transcription (faster-whisper)
+│   └── summarizer.py               # AI document summarization (Ollama / OpenAI)
 │
 ├── exporters/                      # Output format converters
 │   ├── json_export.py              # JSON export (site-compatible camelCase)
@@ -98,16 +115,17 @@ src/epstein_pipeline/
 
 ### Multi-Backend OCR with Fallback Chain
 
-The pipeline supports four OCR backends because no single engine handles all document types well:
+The pipeline supports five OCR backends because no single engine handles all document types well:
 
 | Backend | Strengths | Weaknesses |
 |---|---|---|
 | **PyMuPDF** | Instant, extracts existing text layers | Cannot OCR scanned images |
-| **Surya** | Fast, 90+ languages, good accuracy | Misses some layouts |
+| **SmolDocling-256M** | Fast (0.35s/page), tables/charts/forms, only 500MB VRAM | Newer model, less tested |
+| **Surya** | Fast, 90+ languages, good accuracy | Misses some complex layouts |
 | **olmOCR 2** | Highest accuracy (VLM-based) | Requires 8GB+ GPU |
 | **Docling (IBM)** | Understands tables/layout, no GPU | Slower than Surya |
 
-The default strategy (`--backend both`) tries PyMuPDF first (for documents with text layers), then falls back to Docling for scanned pages. Per-page confidence scoring tracks which backend produced each extraction.
+The default strategy (`--backend auto`) chains: PyMuPDF → SmolDocling → Surya → Docling. Per-page confidence scoring triggers fallback when quality is low. olmOCR is excluded from auto mode due to GPU cost; select explicitly with `--backend olmocr`.
 
 ### Three-Pass Deduplication
 
@@ -135,7 +153,7 @@ class Document(BaseModel):
 
 ### Person Registry
 
-The person registry (`data/persons-registry.json`) contains 1,500+ known persons with:
+The person registry (`data/persons-registry.json`) contains 1,723+ known persons with:
 - Canonical names, aliases, and spelling variations
 - Unique IDs matching the site's person pages
 - Categories (associate, legal, political, victim, etc.)
