@@ -6,73 +6,77 @@
 
 Open-source document processing pipeline for the Jeffrey Epstein case files. Downloads, OCRs, transcribes video depositions, extracts entities, deduplicates, classifies, embeds, and exports **2.1 million+ documents** to Neon Postgres with pgvector semantic search.
 
-**This is the data engine behind [epsteinexposed.com](https://epsteinexposed.com)** — the most comprehensive searchable database of the Epstein files.
+**This is the data engine behind [epsteinexposed.com](https://epsteinexposed.com)** --the most comprehensive searchable database of the Epstein files.
 
 ## What It Does
 
 ```
-DOJ EFTA Releases (DS1–DS12)   ─┐
-Kaggle / HuggingFace / Archive  ─┤
-Video Depositions (justice.gov) ─┼──► Download
-DS10 Seized Media (826 files)   ─┘
-        │
-        ▼
-┌──────────────────────────────────────────────────────────┐
-│  OCR (multi-backend fallback chain)                      │
-│  PyMuPDF → SmolDocling-256M → Surya → olmOCR → Docling   │
-│  Per-page confidence scoring, automatic backend selection│
-└──────────────────────┬───────────────────────────────────┘
-                       │
-    ┌──────────────────┼──────────────────┐
-    ▼                  ▼                  ▼
-┌────────────┐  ┌────────────┐  ┌──────────────────┐
-│ Transcribe │  │ NER        │  │ Classifier       │
-│ WhisperX / │  │ spaCy trf  │  │ GLiClass-        │
-│ faster-    │  │ + GLiNER   │  │ ModernBERT       │
-│ whisper    │  │ + regex    │  │ (50x faster)     │
-│ + pyannote │  │            │  │ 12 doc categories│
-│ diarize    │  │            │  │                  │
-└─────┬──────┘  └─────┬──────┘  └────────┬─────────┘
-      │               │                  │
-    ┌─┼───────────────┼──────────────────┘
-    │ │               │
-    ▼ ▼               ▼
-┌────────────┐  ┌────────────┐  ┌──────────────────┐
-│ Structured │  │ Dedup      │  │ Summarizer       │
-│ Extraction │  │ Hash →     │  │ LLM-based        │
-│ Instructor │  │ MinHash →  │  │ Redaction        │
-│ + Pydantic │  │ Semantic   │  │ Analysis         │
-└─────┬──────┘  └─────┬──────┘  └────────┬─────────┘
-      │               │                  │
-      └───────────────┼──────────────────┘
-                      ▼
-┌──────────────────────────────────────────────────────────┐
-│  Semantic Chunker → Embeddings (nomic-embed-text-v2-moe) │
-│  Paragraph-aware splitting, 768-dim / 256-dim Matryoshka │
-└──────────────────────┬───────────────────────────────────┘
-                       │
-    ┌──────────────────┼──────────────────┐
-    ▼                  ▼                  ▼
-┌────────────┐  ┌────────────┐  ┌──────────────────┐
-│ Neon PG    │  │ JSON/CSV   │  │ Knowledge Graph  │
-│ + pgvector │  │ SQLite     │  │ GEXF + JSON      │
-│ cosine ANN │  │ NDJSON     │  │ LLM extraction   │
-└────────────┘  └────────────┘  └──────────────────┘
+ ┌─ DOJ EFTA Releases (DS1-DS12)
+ ├─ Kaggle / HuggingFace / Archive
+ ├─ Video Depositions (justice.gov)          Each stage is a CLI command.
+ └─ DS10 Seized Media (826 files)            Chain them together or run
+         │                                   individually as needed.
+         ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  download                                                   │
+  │  Fetch raw PDFs, media, and metadata from public sources    │
+  └────────────────────────────┬────────────────────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+  ┌──────────────────┐  ┌───────────┐  ┌──────────────────────┐
+  │  ocr             │  │ transcribe│  │ extract-entities     │
+  │  PyMuPDF →       │  │ WhisperX /│  │ spaCy trf + GLiNER   │
+  │  SmolDocling →   │  │ faster-   │  │ + regex patterns     │
+  │  Surya → olmOCR  │  │ whisper   │  │ Persons, orgs, dates │
+  │  → Docling       │  │ + pyannote│  │ money, case numbers  │
+  │  (auto fallback) │  │ diarize   │  │                      │
+  └────────┬─────────┘  └─────┬─────┘  └──────────┬───────────┘
+           │                  │                    │
+           ▼                  ▼                    ▼
+  ┌──────────────────┐  ┌───────────┐  ┌──────────────────────┐
+  │  classify        │  │ dedup     │  │ extract-structured   │
+  │  GLiClass-       │  │ Hash →    │  │ Instructor + Pydantic│
+  │  ModernBERT      │  │ MinHash → │  │ Case refs, amounts,  │
+  │  12 categories   │  │ Semantic  │  │ persons, dates, locs │
+  │  (50x faster)    │  │           │  │ (Ollama / OpenAI)    │
+  └────────┬─────────┘  └─────┬─────┘  └──────────┬───────────┘
+           │                  │                    │
+           └──────────────────┼────────────────────┘
+                              ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  embed                                                      │
+  │  Semantic Chunker → nomic-embed-text-v2-moe embeddings      │
+  │  Paragraph-aware splitting, 768-dim / 256-dim Matryoshka    │
+  └────────────────────────────┬────────────────────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+  ┌──────────────────┐  ┌───────────┐  ┌──────────────────────┐
+  │  export-neon     │  │ export    │  │ export-kg            │
+  │  Neon Postgres   │  │ json/csv  │  │ Knowledge Graph      │
+  │  + pgvector      │  │ sqlite    │  │ GEXF + JSON          │
+  │  cosine ANN      │  │ ndjson    │  │ LLM extraction       │
+  └──────────────────┘  └───────────┘  └──────────────────────┘
 ```
+
+> **How it works:** Each box is a CLI command (`epstein-pipeline <command>`). Run them in sequence or individually. Each stage reads the previous stage's JSON output. No stage is fully automatic -- you trigger each step and can inspect the output before proceeding.
 
 ## Current Scale
 
 | Metric | Count |
 |--------|-------|
-| Documents ingested | 2,145,000+ |
-| OCR texts extracted | 2,014,000+ |
-| Persons identified | 1,723 |
-| Document-person links | 2,443,000+ |
+| Documents ingested | 2,146,000+ |
+| OCR texts extracted | 2,013,000+ |
+| Persons identified | 1,570+ |
+| Document-person links | 2,286,000+ |
 | SHA-256 integrity hashes | 1,380,000+ |
-| DOJ datasets processed | 12 of 12 (DS1–DS12) |
+| DOJ datasets processed | 12 of 12 (DS1-DS12) |
 | Video/audio files cataloged | 826 (DS10 seized media) |
 | Deposition audio transcribed | 6.1 hours (Maxwell DOJ interview) |
 | Deposition transcript segments | 4,510 |
+| House Oversight docs indexed | 38,000+ |
+| Embedding chunks (pgvector) | 2,670,000+ |
 
 ## Quickstart
 
@@ -81,8 +85,8 @@ DS10 Seized Media (826 files)   ─┘
 pip install "epstein-pipeline[all]"
 python -m spacy download en_core_web_sm
 
-# Download a DOJ dataset
-epstein-pipeline download doj --dataset 9
+# Download from a source
+epstein-pipeline download doj
 
 # OCR with automatic backend selection
 epstein-pipeline ocr ./raw-pdfs/ --output ./processed/
@@ -158,7 +162,7 @@ The pipeline can download, transcribe, and index video depositions and audio int
 ### Transcription Features
 
 - **GPU-accelerated** via faster-whisper with CUDA (tested on GTX 1660 SUPER, 6GB VRAM)
-- **Auto INT8 quantization** for GPUs with ≤8GB VRAM — large-v3-turbo quality at medium-model memory
+- **Auto INT8 quantization** for GPUs with ≤8GB VRAM --large-v3-turbo quality at medium-model memory
 - **Speaker diarization** via WhisperX + pyannote-audio 3.1 (requires HuggingFace token)
 - **Timestamped segments** with speaker labels, confidence scores
 - **Searchable transcripts** exported to Neon with full-text search (tsvector/GIN indexes)
@@ -202,11 +206,11 @@ deposition_segments (deposition_id, segment_index, start_time, end_time,
 LLM-powered extraction of structured fields from legal documents using [Instructor](https://github.com/567-labs/instructor) + Pydantic schemas. Works with Ollama (free, local), OpenAI, or Anthropic.
 
 Extracts:
-- **Case references** — case number, court, parties
-- **Financial amounts** — amount, currency, context, from/to entities
-- **Persons with roles** — name, role (attorney, witness, defendant), organization
-- **Dates with events** — date, what happened, location
-- **Locations** — name, type (address, property, city), context
+- **Case references** --case number, court, parties
+- **Financial amounts** --amount, currency, context, from/to entities
+- **Persons with roles** --name, role (attorney, witness, defendant), organization
+- **Dates with events** --date, what happened, location
+- **Locations** --name, type (address, property, city), context
 
 ```bash
 # Uses Ollama by default (free, runs locally)
@@ -222,10 +226,10 @@ epstein-pipeline extract-structured ./documents/ --backend openai --model gpt-4o
 # Core only (no ML models)
 pip install epstein-pipeline
 
-# With OCR (CPU — Surya + SmolDocling)
+# With OCR (CPU --Surya + SmolDocling)
 pip install "epstein-pipeline[ocr-surya,pymupdf]"
 
-# With OCR (GPU — olmOCR 2, requires CUDA)
+# With OCR (GPU --olmOCR 2, requires CUDA)
 pip install "epstein-pipeline[ocr-gpu]"
 
 # With NLP (spaCy + GLiNER)
@@ -338,9 +342,9 @@ LLM-powered extraction using Instructor + Pydantic schemas. Extracts case refere
 
 ### Deduplication (`processors/dedup.py`)
 Three-pass deduplication pipeline:
-1. **Exact hash** — SHA-256 content hash for identical files
-2. **MinHash/LSH** — O(n) near-duplicate detection for OCR variants
-3. **Semantic similarity** — Embedding cosine similarity for reformatted duplicates
+1. **Exact hash** --SHA-256 content hash for identical files
+2. **MinHash/LSH** --O(n) near-duplicate detection for OCR variants
+3. **Semantic similarity** --Embedding cosine similarity for reformatted duplicates
 
 ### Semantic Chunking (`processors/chunker.py`)
 Paragraph-aware text splitting with OCR noise cleaning. Respects sentence and paragraph boundaries, targets 450 tokens per chunk with 50-token overlap. Includes contextual prefixes (document title + source) per chunk.
@@ -462,10 +466,10 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full gu
 
 ## Related Projects
 
-- [epsteinexposed.com](https://epsteinexposed.com) — The live website powered by this pipeline
-- [rhowardstone/Epstein-research-data](https://github.com/rhowardstone/Epstein-research-data) — Community research dataset (1,530 transcripts, entity registry)
-- [rodrigopolo/epstein-doj-library-sha256](https://github.com/rodrigopolo/epstein-doj-library-sha256) — SHA-256 integrity hashes for DOJ files
-- [freelawproject/courtlistener](https://github.com/freelawproject/courtlistener) — Court data infrastructure
-- [freelawproject/juriscraper](https://github.com/freelawproject/juriscraper) — PACER scraper
-- [Epstein-Files](https://github.com/WikiLeaksLookup/Epstein-Files) — DOJ file mirrors
-- [Epstein-doc-explorer](https://github.com/nicholasgasior/Epstein-doc-explorer) — Email graph explorer
+- [epsteinexposed.com](https://epsteinexposed.com) --The live website powered by this pipeline
+- [rhowardstone/Epstein-research-data](https://github.com/rhowardstone/Epstein-research-data) --Community research dataset (1,530 transcripts, entity registry)
+- [rodrigopolo/epstein-doj-library-sha256](https://github.com/rodrigopolo/epstein-doj-library-sha256) --SHA-256 integrity hashes for DOJ files
+- [freelawproject/courtlistener](https://github.com/freelawproject/courtlistener) --Court data infrastructure
+- [freelawproject/juriscraper](https://github.com/freelawproject/juriscraper) --PACER scraper
+- [Epstein-Files](https://github.com/WikiLeaksLookup/Epstein-Files) --DOJ file mirrors
+- [Epstein-doc-explorer](https://github.com/nicholasgasior/Epstein-doc-explorer) --Email graph explorer
