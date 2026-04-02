@@ -139,7 +139,7 @@ class TemporalExtractor:
                 api_key=os.environ.get("OPENAI_API_KEY"),
             )
             self._client = instructor.from_openai(base_client)
-            self.model = self.model or "gpt-4o-mini"
+            self.model = self.model or "gpt-4.1-mini"
 
         elif self.backend == "anthropic":
             import os
