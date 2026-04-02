@@ -1855,7 +1855,7 @@ def audit_persons(
         auditor.close()
 
     console.print(BANNER)
-    console.print(f"[bold]Person Integrity Audit[/bold]")
+    console.print("[bold]Person Integrity Audit[/bold]")
     console.print(f"  Phases: {phases}")
     if person:
         console.print(f"  Person: {person}")
@@ -1901,7 +1901,7 @@ def audit_persons(
         reverse=True,
     )
     if all_issues:
-        console.print(f"\n[bold]Top Issues:[/bold]")
+        console.print("\n[bold]Top Issues:[/bold]")
         for issue in all_issues[:20]:
             sev_color = "red" if issue.severity >= 70 else "yellow" if issue.severity >= 40 else "white"
             console.print(
@@ -1917,6 +1917,302 @@ def audit_persons(
         report["issues"] = [i.model_dump() for i in all_issues]
         out_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         console.print(f"\n[green]Report written to {out_path}[/green]")
+
+
+# ---------------------------------------------------------------------------
+# extract-events — Temporal event extraction
+# ---------------------------------------------------------------------------
+
+
+@cli.command("extract-events")
+@click.argument(
+    "input_dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--output", "-o", type=click.Path(path_type=Path), default=None,
+    help="Output directory for per-document event JSON files.",
+)
+@click.option(
+    "--backend",
+    type=click.Choice(["ollama", "openai", "anthropic"]),
+    default="ollama",
+    help="LLM backend.",
+)
+@click.option("--model", type=str, default=None, help="LLM model name override.")
+@click.option(
+    "--confidence", type=float, default=0.3,
+    help="Minimum confidence threshold for events.",
+)
+def extract_events(
+    input_dir: Path,
+    output: Path | None,
+    backend: str,
+    model: str | None,
+    confidence: float,
+) -> None:
+    """Extract temporal events from processed documents.
+
+    Reads OCR/text output and uses LLM to extract structured timeline events
+    including dates, participants, locations, and event types.
+
+    \b
+    Examples:
+      epstein-pipeline extract-events ./output/ocr --backend ollama
+      epstein-pipeline extract-events ./output/ocr --backend openai --confidence 0.5
+      epstein-pipeline extract-events ./output/ocr -o ./output/events
+    """
+    settings = _load_settings()
+    out_dir = output or settings.output_dir / "events"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    settings.temporal_llm_provider = backend
+    if model:
+        settings.temporal_llm_model = model
+    settings.temporal_confidence_threshold = confidence
+
+    from epstein_pipeline.models.document import Document, ProcessingResult
+    from epstein_pipeline.processors.temporal_extractor import TemporalExtractor
+
+    json_files = sorted(input_dir.rglob("*.json"))
+    if not json_files:
+        console.print(f"[yellow]No JSON files found in {input_dir}[/yellow]")
+        return
+
+    # Build text list
+    texts: list[tuple[str, str, str | None]] = []
+    for jf in json_files:
+        try:
+            raw = json.loads(jf.read_text(encoding="utf-8"))
+            doc = None
+            if "document" in raw and raw["document"] is not None:
+                result = ProcessingResult.model_validate(raw)
+                doc = result.document
+            elif "id" in raw and "title" in raw:
+                doc = Document.model_validate(raw)
+
+            if doc and (doc.ocrText or doc.summary):
+                text = doc.ocrText or doc.summary or ""
+                texts.append((text, doc.id, doc.date))
+        except Exception:
+            continue
+
+    if not texts:
+        console.print("[yellow]No documents with text found.[/yellow]")
+        return
+
+    console.print(f"Extracting events from [bold]{len(texts)}[/bold] documents")
+
+    extractor = TemporalExtractor(settings, backend=backend, model=model)
+    batch_result = extractor.extract_batch(texts, output_dir=out_dir)
+
+    # Save combined timeline
+    combined_path = out_dir / "timeline.json"
+    combined_path.write_text(
+        batch_result.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    console.print(f"\n[green]Timeline saved to {combined_path}[/green]")
+    console.print(f"  Total events: {batch_result.total_events}")
+    console.print(f"  Documents processed: {batch_result.total_documents}")
+
+
+# ---------------------------------------------------------------------------
+# export-neo4j — Neo4j knowledge graph export
+# ---------------------------------------------------------------------------
+
+
+@cli.command("export-neo4j")
+@click.argument(
+    "input_dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--neo4j-uri", envvar="EPSTEIN_NEO4J_URI", required=True,
+    help="Neo4j connection URI (bolt:// or neo4j+s://).",
+)
+@click.option(
+    "--neo4j-password", envvar="EPSTEIN_NEO4J_PASSWORD", required=True,
+    help="Neo4j password.",
+)
+@click.option("--neo4j-username", default="neo4j", help="Neo4j username.")
+@click.option("--neo4j-database", default="neo4j", help="Neo4j database name.")
+@click.option(
+    "--clear", is_flag=True, default=False,
+    help="Clear all existing Neo4j data before export.",
+)
+def export_neo4j(
+    input_dir: Path,
+    neo4j_uri: str,
+    neo4j_password: str,
+    neo4j_username: str,
+    neo4j_database: str,
+    clear: bool,
+) -> None:
+    """Export knowledge graph to Neo4j database.
+
+    Reads processed JSON files, builds the knowledge graph, and exports
+    nodes + edges to Neo4j using batch MERGE operations (idempotent).
+
+    \b
+    Examples:
+      epstein-pipeline export-neo4j ./output/entities --neo4j-uri bolt://localhost:7687
+      EPSTEIN_NEO4J_URI=bolt://... epstein-pipeline export-neo4j ./output/entities
+    """
+    import asyncio
+
+    from epstein_pipeline.exporters.neo4j_export import Neo4jExporter
+    from epstein_pipeline.models.document import Document, ProcessingResult
+    from epstein_pipeline.processors.knowledge_graph import KnowledgeGraphBuilder
+
+    settings = _load_settings()
+    settings.neo4j_uri = neo4j_uri
+    settings.neo4j_password = neo4j_password
+    settings.neo4j_username = neo4j_username
+    settings.neo4j_database = neo4j_database
+
+    # Load documents (same pattern as build-graph)
+    json_files = sorted(input_dir.rglob("*.json"))
+    documents: list[Document] = []
+    for jf in json_files:
+        try:
+            raw = json.loads(jf.read_text(encoding="utf-8"))
+            if "document" in raw and raw["document"] is not None:
+                result = ProcessingResult.model_validate(raw)
+                if result.document:
+                    documents.append(result.document)
+            elif "id" in raw and "title" in raw:
+                documents.append(Document.model_validate(raw))
+        except Exception:
+            continue
+
+    if not documents:
+        console.print("[yellow]No documents found to export.[/yellow]")
+        return
+
+    # Build graph
+    console.print(f"Building graph from [bold]{len(documents)}[/bold] documents")
+    builder = KnowledgeGraphBuilder(settings)
+    builder.add_documents(documents)
+    graph = builder.build()
+    console.print(f"  Nodes: {graph.node_count} | Edges: {graph.edge_count}")
+
+    # Export to Neo4j
+    async def _export():
+        async with Neo4jExporter(settings) as exporter:
+            if clear:
+                await exporter.clear_all()
+            return await exporter.export_graph(graph)
+
+    asyncio.run(_export())
+    console.print("[green]Neo4j export complete.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# resolve-entities — Splink entity resolution
+# ---------------------------------------------------------------------------
+
+
+@cli.command("resolve-entities")
+@click.option(
+    "--registry", "-r", type=click.Path(exists=True, path_type=Path), default=None,
+    help="Path to persons-registry.json.",
+)
+@click.option(
+    "--threshold", "-t", type=float, default=0.85,
+    help="Match probability threshold (0.0-1.0).",
+)
+@click.option(
+    "--output", "-o", type=click.Path(path_type=Path), default=None,
+    help="Output path for resolution results JSON.",
+)
+def resolve_entities(
+    registry: Path | None,
+    threshold: float,
+    output: Path | None,
+) -> None:
+    """Run probabilistic entity resolution on the person registry.
+
+    Uses Splink 4 with DuckDB to find and merge duplicate person records
+    across name variants, aliases, and fuzzy matches.
+
+    \b
+    Examples:
+      epstein-pipeline resolve-entities -r ./data/persons-registry.json
+      epstein-pipeline resolve-entities -r ./data/persons-registry.json --threshold 0.9
+    """
+    settings = _load_settings()
+    settings.splink_match_probability_threshold = threshold
+
+    registry_path = registry or settings.persons_registry_path
+    if not registry_path.exists():
+        console.print(f"[red]Registry not found: {registry_path}[/red]")
+        sys.exit(1)
+
+    from epstein_pipeline.models.registry import PersonRegistry
+    from epstein_pipeline.processors.entity_resolution import EntityResolver
+
+    reg = PersonRegistry.from_json(registry_path)
+    persons = [reg.get(pid) for pid in reg._persons_by_id if reg.get(pid)]
+
+    console.print(f"Loaded [bold]{len(persons)}[/bold] persons from registry")
+
+    resolver = EntityResolver(settings)
+    result = resolver.resolve_persons(persons)
+
+    console.print("\n[bold]Resolution Results:[/bold]")
+    console.print(f"  Input records: {result.total_input_records}")
+    console.print(f"  Clusters: {result.total_clusters}")
+    console.print(f"  Merges: {len(result.merge_map)}")
+
+    # Show multi-record clusters
+    multi_clusters = [c for c in result.clusters if len(c.records) > 1]
+    if multi_clusters:
+        tbl = Table(title="Entity Clusters (multi-record)", show_lines=True)
+        tbl.add_column("Cluster", style="cyan")
+        tbl.add_column("Canonical", style="bold")
+        tbl.add_column("Records", justify="right")
+        tbl.add_column("Members")
+        for c in multi_clusters[:30]:
+            members = ", ".join(r.name for r in c.records[:5])
+            if len(c.records) > 5:
+                members += f" (+{len(c.records) - 5} more)"
+            tbl.add_row(
+                str(c.cluster_id),
+                c.canonical_name,
+                str(len(c.records)),
+                members,
+            )
+        console.print(tbl)
+
+    # Save results
+    out_path = output or settings.output_dir / "entity-resolution.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(
+            {
+                "total_input": result.total_input_records,
+                "total_clusters": result.total_clusters,
+                "merge_map": result.merge_map,
+                "clusters": [
+                    {
+                        "cluster_id": c.cluster_id,
+                        "canonical_id": c.canonical_person_id,
+                        "canonical_name": c.canonical_name,
+                        "record_count": len(c.records),
+                        "records": [
+                            {"id": r.unique_id, "name": r.name, "source": r.source}
+                            for r in c.records
+                        ],
+                    }
+                    for c in result.clusters
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    console.print(f"\n[green]Results saved to {out_path}[/green]")
 
 
 # ---------------------------------------------------------------------------

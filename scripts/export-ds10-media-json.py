@@ -88,8 +88,8 @@ def main():
         else:
             documents += 1
 
-        # Build R2 URL paths
-        thumb_key = f"ds10/{efta_id}/{img_path.name}"
+        # Build R2 URL paths (flat structure under ds10-images/)
+        thumb_key = f"ds10-images/{img_path.name}"
         thumb_url = f"{R2_PROXY}/{thumb_key}"
 
         media_items.append({

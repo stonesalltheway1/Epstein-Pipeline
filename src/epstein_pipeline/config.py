@@ -108,6 +108,27 @@ class Settings(BaseSettings):
     kg_llm_model: str = "gpt-4o-mini"
     kg_extract_relationships: bool = False  # LLM extraction is opt-in
 
+    # ── Neo4j settings ────────────────────────────────────────────────────
+    neo4j_uri: str | None = None  # bolt://localhost:7687 or neo4j+s://...
+    neo4j_username: str = "neo4j"
+    neo4j_password: str | None = None
+    neo4j_database: str = "neo4j"
+    neo4j_batch_size: int = 500  # nodes/edges per UNWIND batch
+    neo4j_retry_max: int = 3
+    neo4j_retry_base_delay: float = 1.0
+
+    # ── Entity resolution (Splink) settings ─────────────────────────────
+    splink_match_probability_threshold: float = 0.85
+    splink_max_pairs: int = 1_000_000  # max comparison pairs (memory guard)
+
+    # ── Temporal extraction settings ─────────────────────────────────────
+    temporal_llm_provider: str = "ollama"  # "ollama", "openai", or "anthropic"
+    temporal_llm_model: str | None = None  # None = auto-select per provider
+    temporal_chunk_size: int = 3000  # chars per chunk for extraction
+    temporal_chunk_overlap: int = 500  # overlap between chunks
+    temporal_max_events_per_chunk: int = 20  # cap per LLM call
+    temporal_confidence_threshold: float = 0.3  # minimum confidence to keep
+
     # ── Sea Doughnut import ──────────────────────────────────────────────
     sea_doughnut_dir: Path | None = None
 

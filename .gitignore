@@ -36,6 +36,10 @@ Thumbs.db
 # Data files (large, local-only)
 data/jmail/
 *.parquet
+ingest/
+
+# Log files
+*.log
 
 # Test artifacts
 .coverage

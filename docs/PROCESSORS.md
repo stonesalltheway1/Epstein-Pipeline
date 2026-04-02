@@ -163,6 +163,55 @@ Scans PDFs for embedded Apple Mail PLIST metadata. Some DOJ documents contain hi
 epstein-pipeline forensics plist ./pdfs --output ./output/plist
 ```
 
+## Temporal Event Extraction (`processors/temporal_extractor.py`)
+
+LLM-powered timeline extraction from depositions, legal documents, and correspondence.
+
+**Features:**
+- Chunks long documents with overlap, extracts events per chunk, deduplicates across chunks
+- Date normalization (natural language → YYYY-MM-DD via `python-dateutil`)
+- 17 event types: meeting, flight, transaction, communication, legal_proceeding, arrest, testimony, deposition, court_filing, property_transaction, employment, travel, social_event, abuse_allegation, investigation, media_report, other
+- Confidence scoring: 0.9+ for explicit dates, 0.5-0.8 for approximate, 0.3-0.5 for vague
+
+**Backends:** Ollama (free, local), OpenAI, Anthropic — same Instructor + Pydantic pattern as structured extraction.
+
+```bash
+epstein-pipeline extract-events ./output/ocr --backend openai --confidence 0.5
+epstein-pipeline extract-events ./output/ocr --backend ollama -o ./output/events
+```
+
+Events stored in Neon `temporal_events` table with FTS, GIN indexes, and `timeline_search()` SQL function.
+
+## Entity Resolution (`processors/entity_resolution.py`)
+
+Probabilistic person deduplication using [Splink 4](https://github.com/moj-analytical-services/splink) with DuckDB backend.
+
+**How it works:**
+- Fellegi-Sunter probabilistic model — no training data required
+- JaroWinkler comparisons on name, first name, last name, and aliases
+- ExactMatch on category
+- Blocking rules to avoid O(n²) comparisons
+- EM training for m/u probability estimation
+- Outputs: entity clusters + merge map (old_id → canonical_id)
+
+```bash
+epstein-pipeline resolve-entities -r ./data/persons-registry.json
+epstein-pipeline resolve-entities -r ./data/persons-registry.json --threshold 0.9
+```
+
+## Neo4j Knowledge Graph Export (`exporters/neo4j_export.py`)
+
+Exports the in-memory knowledge graph to a Neo4j graph database using async batch MERGE operations.
+
+**Node labels:** Person, Organization, Location, Document, Entity (fallback)
+**Relationship types:** CO_OCCURRENCE, CO_PASSENGER, CORRESPONDENCE, FLEW_WITH, EMPLOYED_BY, ASSOCIATED_WITH, PARTY_TO, WITNESS_IN, DEFENDANT_IN, FINANCIAL_LINK, FAMILY_MEMBER, LEGAL_COUNSEL
+
+```bash
+epstein-pipeline export-neo4j ./output/entities --neo4j-uri bolt://localhost:7687
+```
+
+Includes uniqueness constraints, retry with exponential backoff, and `clear_all()` for full reloads.
+
 ## Confidence Scoring
 
 Numeric confidence values for entity-person matches:

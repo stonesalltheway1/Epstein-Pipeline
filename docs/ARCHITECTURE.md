@@ -79,7 +79,9 @@ src/epstein_pipeline/
 │   ├── dedup.py                    # Three-pass dedup (hash → MinHash → semantic)
 │   ├── chunker.py                  # Semantic text chunking (paragraph-aware)
 │   ├── embeddings.py               # nomic-embed-text-v2-moe vector generation
-│   ├── knowledge_graph.py          # Entity relationship graph (JSON + GEXF)
+│   ├── knowledge_graph.py          # Entity relationship graph (JSON + GEXF + Neo4j)
+│   ├── temporal_extractor.py       # LLM temporal event extraction (Instructor + Pydantic)
+│   ├── entity_resolution.py        # Probabilistic entity resolution (Splink 4 + DuckDB)
 │   ├── redaction.py                # Redaction detection + recovery analysis
 │   ├── image_extractor.py          # PDF image extraction + optional AI description
 │   ├── plist_forensics.py          # Apple Mail PLIST metadata extraction
@@ -90,7 +92,8 @@ src/epstein_pipeline/
 │   ├── csv_export.py               # CSV export for researchers
 │   ├── sqlite_export.py            # SQLite with FTS5 full-text search
 │   ├── neon_export.py              # Neon Postgres with pgvector embeddings
-│   ├── neon_schema.py              # Idempotent Neon schema migration SQL
+│   ├── neon_schema.py              # Idempotent Neon schema migration SQL (v4)
+│   ├── neo4j_export.py             # Neo4j graph database export (async MERGE)
 │   └── site_sync.py                # Direct sync to epstein-index site data/
 │
 ├── importers/                      # External data importers
@@ -99,7 +102,8 @@ src/epstein_pipeline/
 ├── models/                         # Pydantic data models
 │   ├── document.py                 # Document, Page, Entity, Embedding models
 │   ├── registry.py                 # Person registry (names, aliases, IDs)
-│   └── forensics.py                # Redaction, PLIST, image analysis models
+│   ├── forensics.py                # Redaction, PLIST, image analysis models
+│   └── temporal.py                 # Temporal event extraction models
 │
 ├── validators/                     # Data quality enforcement
 │   ├── schema.py                   # JSON schema validation

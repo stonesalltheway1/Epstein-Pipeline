@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ── Schema version tracking ──────────────────────────────────────────────────
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MIGRATION_SQL = """
 -- ============================================================================
@@ -386,10 +386,89 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS case_number_local TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_documents_jurisdiction ON documents (jurisdiction);
 
+-- ══════════════════════════════════════════════════════════════════════════════
+-- v4: Temporal Events
+-- ══════════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS temporal_events (
+    id              SERIAL PRIMARY KEY,
+    document_id     TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    date            TEXT NOT NULL,
+    date_raw        TEXT,
+    event_type      TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    participants    TEXT[] NOT NULL DEFAULT '{}',
+    locations       TEXT[] NOT NULL DEFAULT '{}',
+    confidence      REAL NOT NULL DEFAULT 0.5,
+    source_chunk    TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (document_id, date, event_type, description)
+);
+
+CREATE INDEX IF NOT EXISTS idx_temporal_events_document
+    ON temporal_events (document_id);
+CREATE INDEX IF NOT EXISTS idx_temporal_events_date
+    ON temporal_events (date);
+CREATE INDEX IF NOT EXISTS idx_temporal_events_type
+    ON temporal_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_temporal_events_participants
+    ON temporal_events USING gin (participants);
+
+-- Full-text search on event descriptions
+ALTER TABLE temporal_events
+    ADD COLUMN IF NOT EXISTS tsv tsvector
+    GENERATED ALWAYS AS (to_tsvector('english', description)) STORED;
+CREATE INDEX IF NOT EXISTS idx_temporal_events_fts
+    ON temporal_events USING GIN (tsv);
+
+-- Timeline query function
+CREATE OR REPLACE FUNCTION timeline_search(
+    start_date TEXT DEFAULT '1900-01-01',
+    end_date TEXT DEFAULT '2099-12-31',
+    event_types TEXT[] DEFAULT NULL,
+    participant_name TEXT DEFAULT NULL,
+    result_limit INT DEFAULT 100
+)
+RETURNS TABLE (
+    event_id INTEGER,
+    doc_id TEXT,
+    event_date TEXT,
+    etype TEXT,
+    event_description TEXT,
+    event_participants TEXT[],
+    event_locations TEXT[],
+    event_confidence REAL,
+    document_title TEXT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        te.id,
+        te.document_id,
+        te.date,
+        te.event_type,
+        te.description,
+        te.participants,
+        te.locations,
+        te.confidence,
+        d.title
+    FROM temporal_events te
+    LEFT JOIN documents d ON d.id = te.document_id
+    WHERE te.date >= start_date
+      AND te.date <= end_date
+      AND (event_types IS NULL OR te.event_type = ANY(event_types))
+      AND (participant_name IS NULL OR participant_name = ANY(te.participants))
+    ORDER BY te.date ASC, te.confidence DESC
+    LIMIT result_limit;
+END;
+$$;
+
 -- ── Record migration version ────────────────────────────────────────────────
 
 INSERT INTO schema_migrations (version)
-VALUES (3)
+VALUES (4)
 ON CONFLICT (version) DO NOTHING;
 """
 

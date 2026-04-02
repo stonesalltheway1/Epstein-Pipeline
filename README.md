@@ -53,10 +53,19 @@ Open-source document processing pipeline for the Jeffrey Epstein case files. Dow
               ┌────────────────┼────────────────┐
               ▼                ▼                ▼
   ┌──────────────────┐  ┌───────────┐  ┌──────────────────────┐
-  │  export-neon     │  │ export    │  │ export-kg            │
+  │  export-neon     │  │ export    │  │ export-kg / neo4j    │
   │  Neon Postgres   │  │ json/csv  │  │ Knowledge Graph      │
-  │  + pgvector      │  │ sqlite    │  │ GEXF + JSON          │
+  │  + pgvector      │  │ sqlite    │  │ GEXF + JSON + Neo4j  │
   │  cosine ANN      │  │ ndjson    │  │ LLM extraction       │
+  └──────────────────┘  └───────────┘  └──────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+  ┌──────────────────┐  ┌───────────┐  ┌──────────────────────┐
+  │  extract-events  │  │ resolve-  │  │ timeline-search()    │
+  │  Temporal event  │  │ entities  │  │ Neon SQL function    │
+  │  extraction via  │  │ Splink 4  │  │ for date-range +     │
+  │  LLM + Pydantic  │  │ + DuckDB  │  │ participant queries  │
   └──────────────────┘  └───────────┘  └──────────────────────┘
 ```
 
@@ -143,6 +152,9 @@ epstein-pipeline search "financial transactions offshore accounts"
 | **Classifier** | GLiClass-ModernBERT | Very fast (50x) | High (8K context) | Optional |
 | **Classifier** | BART-large-mnli | Medium | Good (legacy) | Optional |
 | **Extraction** | Instructor + Pydantic | LLM-dependent | High | No (uses Ollama/API) |
+| **Temporal** | Instructor + Pydantic | LLM-dependent | High | No (uses Ollama/API) |
+| **Entity Resolution** | Splink 4 + DuckDB | Fast | Probabilistic | No |
+| **Graph Export** | Neo4j async driver | Fast | N/A | No |
 
 ## Video Deposition Indexing
 
@@ -184,7 +196,7 @@ epstein-pipeline transcribe ./media/ --model large-v3-turbo
 epstein-pipeline transcribe ./media/ --diarize --hf-token $HF_TOKEN --min-speakers 2
 ```
 
-### Database Schema (v3)
+### Database Schema (v4)
 
 ```sql
 -- Deposition metadata
@@ -220,6 +232,50 @@ epstein-pipeline extract-structured ./documents/ --backend ollama --model llama3
 epstein-pipeline extract-structured ./documents/ --backend openai --model gpt-4o-mini
 ```
 
+## Temporal Event Extraction
+
+LLM-powered timeline extraction from depositions, legal documents, and correspondence. Extracts structured events with dates, participants, locations, and event types. Handles explicit dates, relative dates, date ranges, and imprecise references.
+
+Event types: meeting, flight, transaction, communication, legal_proceeding, arrest, testimony, deposition, court_filing, property_transaction, employment, travel, social_event, abuse_allegation, investigation, media_report.
+
+```bash
+# Extract timeline events from processed documents
+epstein-pipeline extract-events ./output/ocr --backend openai --confidence 0.5
+
+# Use Ollama for free local extraction
+epstein-pipeline extract-events ./output/ocr --backend ollama -o ./output/events
+```
+
+Events are stored in Neon with FTS and a `timeline_search()` SQL function for date-range + participant queries.
+
+## Neo4j Knowledge Graph Export
+
+Export the knowledge graph (persons, organizations, locations, documents, and all relationships) to a Neo4j graph database for Cypher queries, community detection, centrality analysis, and shortest-path traversal.
+
+```bash
+# Export to Neo4j (local or Aura cloud)
+epstein-pipeline export-neo4j ./output/entities --neo4j-uri bolt://localhost:7687
+
+# Or via environment variables
+export EPSTEIN_NEO4J_URI=neo4j+s://xxx.databases.neo4j.io
+export EPSTEIN_NEO4J_PASSWORD=your-password
+epstein-pipeline export-neo4j ./output/entities
+```
+
+## Entity Resolution (Splink)
+
+Probabilistic person deduplication using [Splink 4](https://github.com/moj-analytical-services/splink) with DuckDB. Replaces naive fuzzy string matching with Fellegi-Sunter probabilistic record linkage across multiple fields (name, first/last name, aliases, category).
+
+```bash
+# Resolve duplicate persons in the registry
+epstein-pipeline resolve-entities -r ./data/persons-registry.json
+
+# With custom match threshold
+epstein-pipeline resolve-entities -r ./data/persons-registry.json --threshold 0.9
+```
+
+Outputs a merge map and cluster report showing which person records refer to the same real-world entity.
+
 ## Installation
 
 ```bash
@@ -252,6 +308,12 @@ pip install "epstein-pipeline[embeddings]"
 
 # With Neon Postgres export (psycopg + pgvector)
 pip install "epstein-pipeline[neon]"
+
+# With Neo4j graph database export
+pip install "epstein-pipeline[neo4j]"
+
+# With Splink entity resolution (probabilistic dedup)
+pip install "epstein-pipeline[splink]"
 
 # Everything (except GPU-only olmOCR)
 pip install "epstein-pipeline[all]"
@@ -298,8 +360,13 @@ epstein-pipeline export csv ./out/ -o docs.csv  # CSV for researchers
 epstein-pipeline export sqlite ./out/ -o ep.db  # SQLite database
 epstein-pipeline export neon --input-dir ./out/ # Push to Neon Postgres
 
+# -- Timeline & Entity Resolution ----------------------------------
+epstein-pipeline extract-events ./out/ --backend openai  # Temporal event extraction
+epstein-pipeline resolve-entities -r ./data/persons-registry.json  # Splink entity resolution
+epstein-pipeline export-neo4j ./out/ --neo4j-uri bolt://localhost:7687  # Neo4j graph export
+
 # -- Database ------------------------------------------------------
-epstein-pipeline migrate                        # Run Neon schema migration (v3)
+epstein-pipeline migrate                        # Run Neon schema migration (v4)
 epstein-pipeline search "query text here"       # Semantic search (pgvector)
 
 # -- Quality -------------------------------------------------------
@@ -365,7 +432,16 @@ LLM-based document summarization for generating concise descriptions of legal do
 Links extracted entity mentions to known persons in the database using fuzzy name matching (rapidfuzz) with word boundary safety (multi-word names only to prevent false positives).
 
 ### Knowledge Graph (`processors/knowledge_graph.py`)
-Builds entity relationship graphs from co-occurrence analysis and optional LLM-based relationship extraction. Exports to GEXF and JSON formats.
+Builds entity relationship graphs from co-occurrence analysis and optional LLM-based relationship extraction. Exports to GEXF, JSON, and Neo4j formats.
+
+### Temporal Event Extraction (`processors/temporal_extractor.py`)
+LLM-powered timeline extraction using Instructor + Pydantic. Chunks documents with overlap, extracts structured events (date, participants, locations, event type), normalizes dates, and deduplicates across chunks. Supports Ollama, OpenAI, and Anthropic backends.
+
+### Entity Resolution (`processors/entity_resolution.py`)
+Probabilistic person deduplication using Splink 4 with DuckDB backend. Fellegi-Sunter model with JaroWinkler comparisons on name, first/last name, and aliases. Produces match clusters and a merge map for consolidating duplicate person records.
+
+### Neo4j Export (`exporters/neo4j_export.py`)
+Async Neo4j exporter using batch MERGE operations. Maps GraphNode types to Neo4j labels (Person, Organization, Location, Document) and GraphEdge types to Neo4j relationship types. Includes schema constraints, retry logic, and idempotent upserts.
 
 ### Plist Forensics (`processors/plist_forensics.py`)
 Parses Apple plist files found in the Epstein device data for contact and metadata extraction.
@@ -410,6 +486,8 @@ All configuration is via environment variables prefixed with `EPSTEIN_`. No cred
 | `EPSTEIN_NEON_DATABASE_URL` | For DB export/search | Neon Postgres connection string |
 | `EPSTEIN_OPENSANCTIONS_API_KEY` | For sanctions check | OpenSanctions API key |
 | `EPSTEIN_AUDITOR_ANTHROPIC_API_KEY` | For person audit | Claude API key (fact-checking) |
+| `EPSTEIN_NEO4J_URI` | For Neo4j export | Neo4j connection URI (bolt:// or neo4j+s://) |
+| `EPSTEIN_NEO4J_PASSWORD` | For Neo4j export | Neo4j password |
 | `EPSTEIN_WHISPER_MODEL` | Optional | Whisper model (default: `large-v3-turbo`) |
 | `EPSTEIN_CLASSIFIER_MODEL` | Optional | Classifier model (default: `knowledgator/gliclass-modern-base-v3.0`) |
 | `HF_TOKEN` | For diarization | HuggingFace token (pyannote model access) |
@@ -425,6 +503,7 @@ All configuration is via environment variables prefixed with `EPSTEIN_`. No cred
 | **CSV** | Research, spreadsheet analysis | `export csv` |
 | **SQLite** | Local querying, offline research | `export sqlite` |
 | **NDJSON** | Streaming, log-style processing | `export json --format ndjson` |
+| **Neo4j** | Graph traversal, community detection, Cypher queries | `export-neo4j` |
 
 ## Data Sources
 

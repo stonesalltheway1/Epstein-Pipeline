@@ -947,6 +947,81 @@ class NeonExporter:
         self._console.print(f"  [dim]Upserted {total:,} relationships[/dim]")
         return total
 
+    # ── Temporal events ───────────────────────────────────────────────────
+
+    async def upsert_temporal_events(
+        self,
+        events_by_doc: dict[str, list[dict[str, Any]]],
+    ) -> int:
+        """Upsert temporal events into the temporal_events table.
+
+        Parameters
+        ----------
+        events_by_doc : dict[str, list[dict]]
+            Events keyed by document_id. Each event dict should have:
+            date, date_raw, event_type, description, participants,
+            locations, confidence, source_chunk.
+
+        Returns the total number of rows upserted.
+        """
+        all_events = [
+            (doc_id, event)
+            for doc_id, events in events_by_doc.items()
+            for event in events
+        ]
+        if not all_events:
+            return 0
+
+        pool = await self._get_pool()
+        total = 0
+
+        with _make_progress() as progress:
+            task = progress.add_task("Upserting temporal events", total=len(all_events))
+
+            for batch in _batches(all_events, self.batch_size):
+                async with pool.connection() as conn:
+                    async with conn.cursor() as cur:
+                        for doc_id, event in batch:
+                            await cur.execute(
+                                """
+                                INSERT INTO temporal_events (
+                                    document_id, date, date_raw, event_type,
+                                    description, participants, locations,
+                                    confidence, source_chunk
+                                ) VALUES (
+                                    %(document_id)s, %(date)s, %(date_raw)s,
+                                    %(event_type)s, %(description)s,
+                                    %(participants)s, %(locations)s,
+                                    %(confidence)s, %(source_chunk)s
+                                )
+                                ON CONFLICT (document_id, date, event_type, description)
+                                DO UPDATE SET
+                                    date_raw = EXCLUDED.date_raw,
+                                    participants = EXCLUDED.participants,
+                                    locations = EXCLUDED.locations,
+                                    confidence = EXCLUDED.confidence,
+                                    source_chunk = EXCLUDED.source_chunk
+                                """,
+                                {
+                                    "document_id": doc_id,
+                                    "date": event["date"],
+                                    "date_raw": event.get("date_raw"),
+                                    "event_type": event["event_type"],
+                                    "description": event["description"],
+                                    "participants": event.get("participants", []),
+                                    "locations": event.get("locations", []),
+                                    "confidence": event.get("confidence", 0.5),
+                                    "source_chunk": event.get("source_chunk"),
+                                },
+                            )
+                    await conn.commit()
+
+                total += len(batch)
+                progress.advance(task, len(batch))
+
+        self._console.print(f"  [dim]Upserted {total:,} temporal events[/dim]")
+        return total
+
     # ── Semantic search ───────────────────────────────────────────────────
 
     async def semantic_search(

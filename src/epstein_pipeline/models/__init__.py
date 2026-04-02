@@ -11,6 +11,11 @@ from epstein_pipeline.models.document import (
     ProcessingResult,
     VerificationStatus,
 )
+from epstein_pipeline.models.fec import (
+    FECContribution,
+    FECPersonResult,
+    FECSearchResult,
+)
 from epstein_pipeline.models.forensics import (
     ConcordanceSummary,
     ExtractedEntity,
@@ -24,11 +29,6 @@ from epstein_pipeline.models.forensics import (
     Transcript,
     TranscriptSegment,
 )
-from epstein_pipeline.models.fec import (
-    FECContribution,
-    FECPersonResult,
-    FECSearchResult,
-)
 from epstein_pipeline.models.icij import (
     ICIJCrossRefResult,
     ICIJEntity,
@@ -39,10 +39,16 @@ from epstein_pipeline.models.icij import (
     ICIJRelationshipChain,
 )
 from epstein_pipeline.models.registry import PersonRegistry
+from epstein_pipeline.models.temporal import (
+    DocumentTemporalResult,
+    TemporalEvent,
+    TemporalExtractionBatch,
+)
 
 __all__ = [
     "ConcordanceSummary",
     "Document",
+    "DocumentTemporalResult",
     "FECContribution",
     "FECPersonResult",
     "FECSearchResult",
@@ -69,6 +75,8 @@ __all__ = [
     "RedactionScore",
     "RecoveredText",
     "SeaDoughnutCorpus",
+    "TemporalEvent",
+    "TemporalExtractionBatch",
     "Transcript",
     "TranscriptSegment",
     "VerificationStatus",
