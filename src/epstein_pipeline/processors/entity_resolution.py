@@ -45,7 +45,7 @@ class PersonRecord:
 class EntityCluster:
     """A cluster of person records resolved to the same entity."""
 
-    cluster_id: int
+    cluster_id: str | int
     canonical_person_id: str | None = None
     canonical_name: str = ""
     records: list[PersonRecord] = field(default_factory=list)
@@ -151,25 +151,28 @@ class EntityResolver:
                 "Install with: pip install 'epstein-pipeline[splink]'"
             )
 
+        import pandas as pd
         import splink.comparison_library as cl
         from splink import DuckDBAPI, Linker, SettingsCreator, block_on
 
         logger.info("Running Splink entity resolution on %d records...", len(records))
 
-        # Convert records to list of dicts for Splink
-        input_data = [
-            {
-                "unique_id": r.unique_id,
-                "source": r.source,
-                "name": r.name,
-                "name_lower": r.name_lower,
-                "first_name": r.first_name or "",
-                "last_name": r.last_name or "",
-                "aliases": r.aliases or "",
-                "category": r.category or "",
-            }
-            for r in records
-        ]
+        # Convert records to a pandas DataFrame for Splink 4
+        input_data = pd.DataFrame(
+            [
+                {
+                    "unique_id": r.unique_id,
+                    "source": r.source,
+                    "name": r.name,
+                    "name_lower": r.name_lower,
+                    "first_name": r.first_name or "",
+                    "last_name": r.last_name or "",
+                    "aliases": r.aliases or "",
+                    "category": r.category or "",
+                }
+                for r in records
+            ]
+        )
 
         # Configure Splink model
         db_api = DuckDBAPI()
@@ -194,16 +197,23 @@ class EntityResolver:
 
         linker = Linker(input_data, splink_settings, db_api)
 
-        # Train the model — estimate u probabilities from random sampling
+        # Step 1: Estimate prior probability two random records match
+        try:
+            linker.training.estimate_probability_two_random_records_match(
+                [block_on("name_lower")], recall=0.7,
+            )
+        except Exception as exc:
+            logger.warning("Prior estimation failed: %s", exc)
+
+        # Step 2: Estimate u probabilities from random sampling
         linker.training.estimate_u_using_random_sampling(
             max_pairs=min(self.settings.splink_max_pairs, len(records) * 100)
         )
 
-        # Train m probabilities using blocking rules
+        # Step 3: Train m probabilities using blocking rules
         try:
             linker.training.estimate_parameters_using_expectation_maximisation(
                 block_on("name_lower"),
-                fix_u_probabilities=True,
             )
         except Exception as exc:
             logger.warning(
@@ -213,28 +223,27 @@ class EntityResolver:
         try:
             linker.training.estimate_parameters_using_expectation_maximisation(
                 block_on("last_name"),
-                fix_u_probabilities=True,
             )
         except Exception as exc:
             logger.warning("EM training on last_name failed: %s", exc)
 
-        # Predict matches
+        # Step 4: Predict matches
         predictions = linker.inference.predict(
             threshold_match_probability=self.threshold
         )
 
-        # Cluster the results
+        # Step 5: Cluster pairwise predictions
         clusters_df = linker.clustering.cluster_pairwise_predictions_at_threshold(
-            predictions, threshold_match_probability=self.threshold
+            predictions, self.threshold
         )
 
         # Convert clusters to our output format
         clusters_data = clusters_df.as_pandas_dataframe()
         record_map = {r.unique_id: r for r in records}
 
-        cluster_groups: dict[int, list[PersonRecord]] = {}
+        cluster_groups: dict[str | int, list[PersonRecord]] = {}
         for _, row in clusters_data.iterrows():
-            cid = int(row["cluster_id"])
+            cid = row["cluster_id"]
             uid = row["unique_id"]
             if uid in record_map:
                 cluster_groups.setdefault(cid, []).append(record_map[uid])

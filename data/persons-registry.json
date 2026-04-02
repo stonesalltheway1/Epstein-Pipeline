@@ -523,14 +523,6 @@
     "category": "other"
   },
   {
-    "id": "p-0073",
-    "slug": "alex-acosta",
-    "name": "Alex Acosta",
-    "aliases": [],
-    "category": "legal",
-    "shortBio": "Attorney and former United States Secretary of Labor"
-  },
-  {
     "id": "p-0074",
     "slug": "alex-resnick",
     "name": "Alex Resnick",
@@ -552,7 +544,8 @@
       "Alex Acosta",
       "R. Alexander Acosta"
     ],
-    "category": "legal"
+    "category": "legal",
+    "shortBio": "Attorney and former United States Secretary of Labor"
   },
   {
     "id": "p-0077",
@@ -569,17 +562,12 @@
     "category": "associate"
   },
   {
-    "id": "p-0079",
-    "slug": "alexandra-dixon",
-    "name": "Alexandra Dixon",
-    "aliases": [],
-    "category": "associate"
-  },
-  {
     "id": "p-0080",
     "slug": "alexandria-dixon",
     "name": "Alexandria Dixon",
-    "aliases": [],
+    "aliases": [
+      "Alexandra Dixon"
+    ],
     "category": "other"
   },
   {
@@ -4050,13 +4038,6 @@
     "category": "associate"
   },
   {
-    "id": "p-0546",
-    "slug": "forest-sawyer",
-    "name": "Forest Sawyer",
-    "aliases": [],
-    "category": "other"
-  },
-  {
     "id": "p-0547",
     "slug": "forest-sawyer",
     "name": "Forrest Sawyer",
@@ -4460,13 +4441,6 @@
     "category": "other"
   },
   {
-    "id": "p-0601",
-    "slug": "glen-dubin",
-    "name": "Glen Dubin",
-    "aliases": [],
-    "category": "associate"
-  },
-  {
     "id": "p-0602",
     "slug": "glen-durbin",
     "name": "Glen Durbin",
@@ -4484,7 +4458,9 @@
     "id": "p-0604",
     "slug": "glenn-dubin",
     "name": "Glenn Dubin",
-    "aliases": [],
+    "aliases": [
+      "Glen Dubin"
+    ],
     "category": "business",
     "shortBio": "billionaire hedge funder"
   },
@@ -5637,13 +5613,6 @@
     "category": "associate"
   },
   {
-    "id": "p-0760",
-    "slug": "jim-cayne",
-    "name": "Jim Cayne",
-    "aliases": [],
-    "category": "other"
-  },
-  {
     "id": "p-0761",
     "slug": "jim-dowd",
     "name": "Jim Dowd",
@@ -5662,7 +5631,8 @@
     "slug": "jimmy-cayne",
     "name": "Jimmy Cayne",
     "aliases": [
-      "James Cayne"
+      "James Cayne",
+      "Jim Cayne"
     ],
     "category": "business"
   },
@@ -6638,7 +6608,9 @@
     "id": "p-0894",
     "slug": "laura-edelstein",
     "name": "Laura Edelstein",
-    "aliases": [],
+    "aliases": [
+      "Laurie Edelstein"
+    ],
     "category": "associate"
   },
   {
@@ -6654,13 +6626,6 @@
     "name": "Lauren Pashcow",
     "aliases": [],
     "category": "other"
-  },
-  {
-    "id": "p-0897",
-    "slug": "laurie-edelstein",
-    "name": "Laurie Edelstein",
-    "aliases": [],
-    "category": "associate"
   },
   {
     "id": "p-0898",
@@ -6777,14 +6742,6 @@
     "category": "business"
   },
   {
-    "id": "p-0913",
-    "slug": "les-wexner",
-    "name": "Les Wexner",
-    "aliases": [],
-    "category": "business",
-    "shortBio": "American businessman and former CEO of Victoria's Secret"
-  },
-  {
     "id": "p-0914",
     "slug": "lesley-groff",
     "name": "Lesley Groff",
@@ -6813,7 +6770,8 @@
     "aliases": [
       "Les Wexner"
     ],
-    "category": "business"
+    "category": "business",
+    "shortBio": "American businessman and former CEO of Victoria's Secret"
   },
   {
     "id": "p-0918",
@@ -10128,7 +10086,9 @@
     "id": "p-1365",
     "slug": "shelley-harrison",
     "name": "Shelley Harrison",
-    "aliases": [],
+    "aliases": [
+      "Shelly Harrison"
+    ],
     "category": "socialite"
   },
   {
@@ -10137,13 +10097,6 @@
     "name": "Shelley Lewis",
     "aliases": [],
     "category": "associate"
-  },
-  {
-    "id": "p-1367",
-    "slug": "shelly-harrison",
-    "name": "Shelly Harrison",
-    "aliases": [],
-    "category": "other"
   },
   {
     "id": "p-1368",
@@ -10435,14 +10388,6 @@
       "Steve Scully (pilot)"
     ],
     "category": "associate"
-  },
-  {
-    "id": "p-1407",
-    "slug": "steve-tisch",
-    "name": "Steve Tisch",
-    "aliases": [],
-    "category": "other",
-    "shortBio": "New York Giants co-owner"
   },
   {
     "id": "p-1408",
@@ -10744,17 +10689,12 @@
     "category": "business"
   },
   {
-    "id": "p-1448",
-    "slug": "thorbjorn-jagland",
-    "name": "Thorbjorn Jagland",
-    "aliases": [],
-    "category": "politician"
-  },
-  {
     "id": "p-1449",
     "slug": "thorbjrn-jagland",
     "name": "Thorbjørn Jagland",
-    "aliases": [],
+    "aliases": [
+      "Thorbjorn Jagland"
+    ],
     "category": "politician",
     "shortBio": "Former Prime Minister of Norway"
   },
@@ -10965,15 +10905,10 @@
     "id": "p-1476",
     "slug": "tova-noel",
     "name": "Tova Noel",
-    "aliases": [],
+    "aliases": [
+      "Tovah Noel"
+    ],
     "category": "other"
-  },
-  {
-    "id": "p-1477",
-    "slug": "tovah-noel",
-    "name": "Tovah Noel",
-    "aliases": [],
-    "category": "associate"
   },
   {
     "id": "p-1478",
