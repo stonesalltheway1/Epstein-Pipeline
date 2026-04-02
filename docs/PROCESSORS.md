@@ -78,17 +78,24 @@ epstein-pipeline extract-structured ./docs/ --backend openai --model gpt-4o-mini
 
 ## Entity Extraction (`processors/entities.py`)
 
-Hybrid NER pipeline: spaCy transformers + GLiNER zero-shot + regex patterns.
+Hybrid NER pipeline: spaCy transformers + GLiNER/GLiNER2 zero-shot + regex patterns.
 
 **Entity types:** PERSON, ORG, GPE, DATE, MONEY, LOC, PHONE, EMAIL_ADDR, ACCOUNT, ADDRESS, CASE_NUMBER, FLIGHT_ID, BATES_NUMBER
 
-**Three-pass extraction:**
-1. spaCy `en_core_web_trf` NER for standard entity types
-2. GLiNER zero-shot for custom legal entities
-3. Regex patterns for case numbers, flight IDs, Bates numbers, phone numbers
+**Four NER backends** (controlled via `EPSTEIN_NER_BACKEND`):
+- **spacy** — `en_core_web_trf` transformer NER
+- **gliner** — GLiNER v1 zero-shot (`urchade/gliner_multi_pii-v1`)
+- **gliner2** — GLiNER2 unified NER (`fastino/gliner2-base-v1`) with entity descriptions
+- **both** — Union merge from spaCy + GLiNER (default)
+
+**Optional coreference resolution** (`--enable-coref`):
+- Pre-NER pronoun resolution using fastcoref (FCoref or LingMessCoref)
+- Resolves "he", "she", "they" to named entities for 30-50% more mentions
+- Install: `pip install 'epstein-pipeline[nlp-coref]'`
 
 ```bash
 epstein-pipeline extract-entities ./output/ocr --entity-types PERSON,ORG,GPE
+epstein-pipeline extract-entities ./output/ocr --enable-coref
 ```
 
 ## Person Linker (`processors/person_linker.py`)

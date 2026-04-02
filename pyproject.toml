@@ -54,6 +54,12 @@ nlp = [
 nlp-gliner = [
     "gliner>=0.2",
 ]
+nlp-gliner2 = [
+    "gliner2>=1.0",
+]
+nlp-coref = [
+    "fastcoref>=2.1",
+]
 ai = [
     "openai>=1.0",
 ]
@@ -104,7 +110,7 @@ audit = [
     "psycopg[binary]>=3.1",
 ]
 all = [
-    "epstein-pipeline[ocr,ocr-surya,pymupdf,nlp,nlp-gliner,ai,vision,transcription,transcription-diarize,embeddings,neon,classify,classify-fast,structured,audit,neo4j,splink]",
+    "epstein-pipeline[ocr,ocr-surya,pymupdf,nlp,nlp-gliner,nlp-gliner2,nlp-coref,ai,vision,transcription,transcription-diarize,embeddings,neon,classify,classify-fast,structured,audit,neo4j,splink]",
 ]
 dev = [
     "pytest>=7.0",

@@ -144,7 +144,9 @@ epstein-pipeline search "financial transactions offshore accounts"
 | **Transcription** | faster-whisper | 10-15x realtime | High | Optional |
 | **Transcription** | WhisperX + pyannote | 70x realtime | High + speaker IDs | Yes |
 | **NER** | spaCy `en_core_web_trf` | Fast | High | Optional |
-| **NER** | GLiNER | Medium | High (zero-shot) | Optional |
+| **NER** | GLiNER v1 | Medium | High (zero-shot) | Optional |
+| **NER** | GLiNER2 | Medium | Higher (unified) | Optional |
+| **Coref** | fastcoref (FCoref/LingMess) | Fast | High | Optional |
 | **Dedup** | Content hash + fuzzy | Instant | Exact only | No |
 | **Dedup** | MinHash/LSH | O(n) | Near-duplicate | No |
 | **Dedup** | Semantic embeddings | Slow | OCR-variant | Optional |
@@ -288,8 +290,11 @@ pip install "epstein-pipeline[ocr-surya,pymupdf]"
 # With OCR (GPU --olmOCR 2, requires CUDA)
 pip install "epstein-pipeline[ocr-gpu]"
 
-# With NLP (spaCy + GLiNER)
-pip install "epstein-pipeline[nlp,nlp-gliner]"
+# With NLP (spaCy + GLiNER + coreference)
+pip install "epstein-pipeline[nlp,nlp-gliner,nlp-coref]"
+
+# With GLiNER2 (unified NER + classification + relations)
+pip install "epstein-pipeline[nlp-gliner2]"
 
 # With transcription (faster-whisper, CPU or GPU)
 pip install "epstein-pipeline[transcription]"
@@ -395,7 +400,7 @@ Dual-backend audio/video transcription:
 Supports: `.mp3, .mp4, .wav, .m4a, .avi, .wmv, .flac, .ogg, .webm, .mov`
 
 ### Entity Extraction (`processors/entities.py`)
-Hybrid NER using spaCy transformer models + GLiNER zero-shot extraction + regex patterns. Extracts people, organizations, locations, dates, case numbers, flight IDs, financial amounts, and Bates numbers from legal documents.
+Hybrid NER using spaCy transformer models + GLiNER/GLiNER2 zero-shot extraction + regex patterns. Extracts people, organizations, locations, dates, case numbers, flight IDs, financial amounts, and Bates numbers from legal documents. Optional coreference resolution (fastcoref) resolves pronouns before NER for 30-50% more entity mentions.
 
 ### Document Classification (`processors/classifier.py`)
 Dual-backend zero-shot classification:

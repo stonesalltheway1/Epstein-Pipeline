@@ -270,7 +270,10 @@ def search(query: str, database_url: str, limit: int, threshold: float) -> None:
 
 
 @cli.command()
-@click.argument("source", type=click.Choice(["doj", "kaggle", "huggingface", "archive", "depositions"]))
+@click.argument(
+    "source",
+    type=click.Choice(["doj", "kaggle", "huggingface", "archive", "depositions"]),
+)
 @click.option(
     "--output", "-o", type=click.Path(path_type=Path), default=None, help="Output directory."
 )
@@ -463,12 +466,19 @@ def ocr(input_dir: Path, output: Path | None, workers: int | None, backend: str 
     default="PERSON",
     help="Comma-separated entity types (PERSON,ORG,GPE,DATE,MONEY,PHONE,EMAIL_ADDR,all).",
 )
+@click.option(
+    "--enable-coref",
+    is_flag=True,
+    default=False,
+    help="Enable coreference resolution (resolve pronouns before NER). Requires fastcoref.",
+)
 def extract_entities(
     input_dir: Path,
     output: Path | None,
     registry: Path | None,
     workers: int | None,
     entity_types: str,
+    enable_coref: bool,
 ) -> None:
     """Extract named entities from OCR JSON files.
 
@@ -476,8 +486,11 @@ def extract_entities(
     Examples:
       epstein-pipeline extract-entities ./output/ocr --entity-types all
       epstein-pipeline extract-entities ./output/ocr -r ./data/persons-registry.json -w 4
+      epstein-pipeline extract-entities ./output/ocr --enable-coref
     """
     settings = _load_settings()
+    if enable_coref:
+        settings.enable_coref = True
     out_dir = output or settings.output_dir / "entities"
     out_dir.mkdir(parents=True, exist_ok=True)
     registry_path = registry or settings.persons_registry_path
@@ -1162,7 +1175,10 @@ def extract_images(
 @click.option("--output", "-o", type=click.Path(path_type=Path), default=None)
 @click.option("--model", type=str, default=None, help="Whisper model size (e.g. large-v3).")
 @click.option("--diarize", is_flag=True, help="Enable speaker diarization via WhisperX + pyannote.")
-@click.option("--hf-token", type=str, default=None, envvar="HF_TOKEN", help="HuggingFace token for pyannote.")
+@click.option(
+    "--hf-token", type=str, default=None, envvar="HF_TOKEN",
+    help="HuggingFace token for pyannote.",
+)
 @click.option("--min-speakers", type=int, default=None, help="Minimum expected speakers.")
 @click.option("--max-speakers", type=int, default=None, help="Maximum expected speakers.")
 def transcribe(
@@ -1547,7 +1563,9 @@ def check_icij(
               help="Minimum match score to import (default 0.75)")
 @click.option("--clear-existing", is_flag=True,
               help="Truncate existing ICIJ data before importing")
-def import_icij_cmd(results_path: Path, database_url: str, min_score: float, clear_existing: bool) -> None:
+def import_icij_cmd(
+    results_path: Path, database_url: str, min_score: float, clear_existing: bool,
+) -> None:
     """Import ICIJ cross-reference results into Neon Postgres.
 
     Reads icij-crossref-results.json and writes matches and relationship
@@ -1630,7 +1648,9 @@ def check_fec(
               help="Minimum match score to import (default 0.85)")
 @click.option("--min-amount", type=int, default=200,
               help="Minimum contribution in cents to import (default 200)")
-def import_fec_cmd(results_path: Path, database_url: str, min_score: float, min_amount: int) -> None:
+def import_fec_cmd(
+    results_path: Path, database_url: str, min_score: float, min_amount: int,
+) -> None:
     """Import FEC political donation results into Neon Postgres.
 
     Reads fec-results.json and writes donation records to the
@@ -1793,7 +1813,7 @@ def import_nonprofits_cmd(results_path: Path, database_url: str, min_score: floa
 
 @cli.command("audit-persons")
 @click.option("--phases", "-p", default="all",
-              help="Comma-separated phases: dedup,wikidata,factcheck,coherence,score (default: all)")
+              help="Comma-separated phases: dedup,wikidata,factcheck,coherence,score")
 @click.option("--person", help="Single person slug to audit")
 @click.option("--limit", "-l", type=int, default=None, help="Max persons to audit")
 @click.option("--resume/--no-resume", default=True, help="Resume from last checkpoint")
@@ -1903,7 +1923,12 @@ def audit_persons(
     if all_issues:
         console.print("\n[bold]Top Issues:[/bold]")
         for issue in all_issues[:20]:
-            sev_color = "red" if issue.severity >= 70 else "yellow" if issue.severity >= 40 else "white"
+            if issue.severity >= 70:
+                sev_color = "red"
+            elif issue.severity >= 40:
+                sev_color = "yellow"
+            else:
+                sev_color = "white"
             console.print(
                 f"  [{sev_color}]{issue.severity:3d}[/{sev_color}] "
                 f"[bold]{issue.person_name}[/bold] — {issue.title}"

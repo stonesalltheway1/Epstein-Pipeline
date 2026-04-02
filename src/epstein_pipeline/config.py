@@ -25,6 +25,7 @@ class NerBackend(str, Enum):
 
     SPACY = "spacy"
     GLINER = "gliner"
+    GLINER2 = "gliner2"
     BOTH = "both"
 
 
@@ -68,7 +69,12 @@ class Settings(BaseSettings):
     spacy_model: str = "en_core_web_trf"  # upgraded from en_core_web_sm
     ner_backend: NerBackend = NerBackend.BOTH
     gliner_model: str = "urchade/gliner_multi_pii-v1"
+    gliner2_model: str = "fastino/gliner2-base-v1"
     ner_confidence_threshold: float = 0.5
+
+    # ── Coreference resolution settings ──────────────────────────────────
+    enable_coref: bool = False  # opt-in: resolve pronouns before NER
+    coref_model: str = "FCoref"  # "FCoref" (fast) or "LingMessCoref" (accurate)
 
     # ── Dedup settings ───────────────────────────────────────────────────
     dedup_mode: DedupMode = DedupMode.ALL
