@@ -161,146 +161,165 @@ def merge_neon(merge_map: dict[str, str], dry_run: bool = False) -> None:
     conn = psycopg.connect(db_url)
     cur = conn.cursor()
 
+    # Check which tables actually exist in this database
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public'
+    """)
+    existing_tables = {row[0] for row in cur.fetchall()}
+
     for drop_id, keep_id in merge_map.items():
         print(f"  Merging {drop_id} -> {keep_id} in Neon...")
+        rows_affected = 0
 
-        # 1. Copy join table rows (document_persons)
-        cur.execute("""
-            INSERT INTO document_persons (document_id, person_id)
-            SELECT document_id, %(keep)s FROM document_persons WHERE person_id = %(drop)s
-            ON CONFLICT (document_id, person_id) DO NOTHING
-        """, {"keep": keep_id, "drop": drop_id})
-
-        # 2. Copy email_persons
-        cur.execute("""
-            INSERT INTO email_persons (email_id, person_id)
-            SELECT email_id, %(keep)s FROM email_persons WHERE person_id = %(drop)s
-            ON CONFLICT (email_id, person_id) DO NOTHING
-        """, {"keep": keep_id, "drop": drop_id})
-
-        # 3. Copy flight_passengers
-        cur.execute("""
-            INSERT INTO flight_passengers (flight_id, person_id, role)
-            SELECT flight_id, %(keep)s, role FROM flight_passengers WHERE person_id = %(drop)s
-            ON CONFLICT (flight_id, person_id, role) DO NOTHING
-        """, {"keep": keep_id, "drop": drop_id})
-
-        # 4. Update relationships (both sides)
-        # First update person1_id, handling potential conflicts
-        cur.execute("""
-            UPDATE relationships SET person1_id = %(keep)s
-            WHERE person1_id = %(drop)s
-            AND NOT EXISTS (
-                SELECT 1 FROM relationships r2
-                WHERE r2.person1_id = %(keep)s
-                  AND r2.person2_id = relationships.person2_id
-                  AND r2.relationship_type = relationships.relationship_type
-                  AND COALESCE(r2.evidence_doc_id, '') = COALESCE(relationships.evidence_doc_id, '')
+        # 1. document_persons (uses doc_id, not document_id)
+        if "document_persons" in existing_tables:
+            cur.execute("""
+                INSERT INTO document_persons (doc_id, person_id)
+                SELECT doc_id, %(keep)s FROM document_persons WHERE person_id = %(drop)s
+                ON CONFLICT DO NOTHING
+            """, {"keep": keep_id, "drop": drop_id})
+            cur.execute(
+                "DELETE FROM document_persons WHERE person_id = %(drop)s",
+                {"drop": drop_id},
             )
-        """, {"keep": keep_id, "drop": drop_id})
-        # Delete remaining conflicts
-        cur.execute(
-            "DELETE FROM relationships WHERE person1_id = %(drop)s",
-            {"drop": drop_id},
-        )
+            rows_affected += cur.rowcount
 
-        # Same for person2_id
-        cur.execute("""
-            UPDATE relationships SET person2_id = %(keep)s
-            WHERE person2_id = %(drop)s
-            AND NOT EXISTS (
-                SELECT 1 FROM relationships r2
-                WHERE r2.person1_id = relationships.person1_id
-                  AND r2.person2_id = %(keep)s
-                  AND r2.relationship_type = relationships.relationship_type
-                  AND COALESCE(r2.evidence_doc_id, '') = COALESCE(relationships.evidence_doc_id, '')
+        # 2. email_persons (may not exist)
+        if "email_persons" in existing_tables:
+            cur.execute("""
+                INSERT INTO email_persons (email_id, person_id)
+                SELECT email_id, %(keep)s FROM email_persons WHERE person_id = %(drop)s
+                ON CONFLICT DO NOTHING
+            """, {"keep": keep_id, "drop": drop_id})
+            cur.execute(
+                "DELETE FROM email_persons WHERE person_id = %(drop)s",
+                {"drop": drop_id},
             )
-        """, {"keep": keep_id, "drop": drop_id})
-        cur.execute(
-            "DELETE FROM relationships WHERE person2_id = %(drop)s",
-            {"drop": drop_id},
-        )
 
-        # 5. Update video depositions
-        cur.execute(
-            "UPDATE video_depositions SET deponent_person_id = %(keep)s "
-            "WHERE deponent_person_id = %(drop)s",
-            {"keep": keep_id, "drop": drop_id},
-        )
-
-        # 6. Update deposition segments
-        cur.execute(
-            "UPDATE deposition_segments SET speaker_person_id = %(keep)s "
-            "WHERE speaker_person_id = %(drop)s",
-            {"keep": keep_id, "drop": drop_id},
-        )
-
-        # 7. Update sanctions_matches
-        cur.execute("""
-            UPDATE sanctions_matches SET person_id = %(keep)s
-            WHERE person_id = %(drop)s
-            AND NOT EXISTS (
-                SELECT 1 FROM sanctions_matches s2
-                WHERE s2.person_id = %(keep)s AND s2.entity_id = sanctions_matches.entity_id
+        # 3. flight_passengers (may not exist)
+        if "flight_passengers" in existing_tables:
+            cur.execute("""
+                INSERT INTO flight_passengers (flight_id, person_id, role)
+                SELECT flight_id, %(keep)s, role FROM flight_passengers
+                WHERE person_id = %(drop)s
+                ON CONFLICT DO NOTHING
+            """, {"keep": keep_id, "drop": drop_id})
+            cur.execute(
+                "DELETE FROM flight_passengers WHERE person_id = %(drop)s",
+                {"drop": drop_id},
             )
-        """, {"keep": keep_id, "drop": drop_id})
-        cur.execute(
-            "DELETE FROM sanctions_matches WHERE person_id = %(drop)s",
-            {"drop": drop_id},
-        )
 
-        # 8. Update political_donations
-        cur.execute("""
-            UPDATE political_donations SET person_id = %(keep)s
-            WHERE person_id = %(drop)s
-            AND NOT EXISTS (
-                SELECT 1 FROM political_donations p2
-                WHERE p2.person_id = %(keep)s
-                  AND p2.fec_transaction_id = political_donations.fec_transaction_id
+        # 4. relationships (may not exist)
+        if "relationships" in existing_tables:
+            cur.execute(
+                "DELETE FROM relationships WHERE person1_id = %(drop)s "
+                "OR person2_id = %(drop)s",
+                {"drop": drop_id},
             )
-        """, {"keep": keep_id, "drop": drop_id})
-        cur.execute(
-            "DELETE FROM political_donations WHERE person_id = %(drop)s",
-            {"drop": drop_id},
-        )
 
-        # 9. Update nonprofit_officers
-        cur.execute(
-            "UPDATE nonprofit_officers SET person_id = %(keep)s "
-            "WHERE person_id = %(drop)s",
-            {"keep": keep_id, "drop": drop_id},
-        )
-
-        # 10. Update ICIJ matches
-        cur.execute("""
-            UPDATE icij_matches SET source_id = %(keep)s
-            WHERE source_id = %(drop)s AND source_type = 'person'
-            AND NOT EXISTS (
-                SELECT 1 FROM icij_matches i2
-                WHERE i2.source_id = %(keep)s
-                  AND i2.source_type = 'person'
-                  AND i2.icij_node_id = icij_matches.icij_node_id
+        # 5. video_depositions
+        if "video_depositions" in existing_tables:
+            cur.execute(
+                "UPDATE video_depositions SET deponent_person_id = %(keep)s "
+                "WHERE deponent_person_id = %(drop)s",
+                {"keep": keep_id, "drop": drop_id},
             )
-        """, {"keep": keep_id, "drop": drop_id})
-        cur.execute(
-            "DELETE FROM icij_matches WHERE source_id = %(drop)s AND source_type = 'person'",
-            {"drop": drop_id},
-        )
+            rows_affected += cur.rowcount
 
-        # 11. Update ICIJ relationships
-        cur.execute(
-            "UPDATE icij_relationships SET source_person_id = %(keep)s "
-            "WHERE source_person_id = %(drop)s",
-            {"keep": keep_id, "drop": drop_id},
-        )
+        # 6. deposition_segments
+        if "deposition_segments" in existing_tables:
+            cur.execute(
+                "UPDATE deposition_segments SET speaker_person_id = %(keep)s "
+                "WHERE speaker_person_id = %(drop)s",
+                {"keep": keep_id, "drop": drop_id},
+            )
+            rows_affected += cur.rowcount
 
-        # 12. Delete the dropped person (cascades document_persons, email_persons, flight_passengers)
-        cur.execute("DELETE FROM persons WHERE id = %(drop)s", {"drop": drop_id})
+        # 7. sanctions_matches
+        if "sanctions_matches" in existing_tables:
+            cur.execute("""
+                UPDATE sanctions_matches SET person_id = %(keep)s
+                WHERE person_id = %(drop)s
+                AND NOT EXISTS (
+                    SELECT 1 FROM sanctions_matches s2
+                    WHERE s2.person_id = %(keep)s
+                      AND s2.entity_id = sanctions_matches.entity_id
+                )
+            """, {"keep": keep_id, "drop": drop_id})
+            rows_affected += cur.rowcount
+            cur.execute(
+                "DELETE FROM sanctions_matches WHERE person_id = %(drop)s",
+                {"drop": drop_id},
+            )
+
+        # 8. political_donations
+        if "political_donations" in existing_tables:
+            cur.execute("""
+                UPDATE political_donations SET person_id = %(keep)s
+                WHERE person_id = %(drop)s
+                AND NOT EXISTS (
+                    SELECT 1 FROM political_donations p2
+                    WHERE p2.person_id = %(keep)s
+                      AND p2.fec_transaction_id = political_donations.fec_transaction_id
+                )
+            """, {"keep": keep_id, "drop": drop_id})
+            rows_affected += cur.rowcount
+            cur.execute(
+                "DELETE FROM political_donations WHERE person_id = %(drop)s",
+                {"drop": drop_id},
+            )
+
+        # 9. nonprofit_officers
+        if "nonprofit_officers" in existing_tables:
+            cur.execute(
+                "UPDATE nonprofit_officers SET person_id = %(keep)s "
+                "WHERE person_id = %(drop)s",
+                {"keep": keep_id, "drop": drop_id},
+            )
+            rows_affected += cur.rowcount
+
+        # 10. icij_matches
+        if "icij_matches" in existing_tables:
+            cur.execute("""
+                UPDATE icij_matches SET source_id = %(keep)s
+                WHERE source_id = %(drop)s AND source_type = 'person'
+                AND NOT EXISTS (
+                    SELECT 1 FROM icij_matches i2
+                    WHERE i2.source_id = %(keep)s
+                      AND i2.source_type = 'person'
+                      AND i2.icij_node_id = icij_matches.icij_node_id
+                )
+            """, {"keep": keep_id, "drop": drop_id})
+            rows_affected += cur.rowcount
+            cur.execute(
+                "DELETE FROM icij_matches "
+                "WHERE source_id = %(drop)s AND source_type = 'person'",
+                {"drop": drop_id},
+            )
+
+        # 11. icij_relationships
+        if "icij_relationships" in existing_tables:
+            cur.execute(
+                "UPDATE icij_relationships SET source_person_id = %(keep)s "
+                "WHERE source_person_id = %(drop)s",
+                {"keep": keep_id, "drop": drop_id},
+            )
+            rows_affected += cur.rowcount
+
+        # 12. Delete the dropped person record
+        if "persons" in existing_tables:
+            cur.execute(
+                "DELETE FROM persons WHERE id = %(drop)s", {"drop": drop_id}
+            )
+            rows_affected += cur.rowcount
+
+        print(f"    {rows_affected} rows affected")
 
     conn.commit()
     cur.close()
     conn.close()
-    print(f"  Neon merge complete: {len(merge_map)} persons merged across all tables")
+    print(f"  Neon merge complete: {len(merge_map)} persons merged")
 
 
 def main():
@@ -316,22 +335,27 @@ def main():
     print(f"  Mode: {'DRY RUN' if args.dry_run else 'LIVE'}")
     print()
 
+    # Build merge map from the hardcoded list (works even if registry already cleaned)
+    full_merge_map = {drop_id: keep_id for keep_id, drop_id, _ in CONFIRMED_MERGES}
+
     # Step 1: Merge registry
     print("--- Step 1: Registry JSON ---")
-    merge_map = merge_registry(dry_run=args.dry_run)
+    registry_map = merge_registry(dry_run=args.dry_run)
+    if not registry_map:
+        print("  (Registry already clean — using hardcoded merge map for Neon)")
 
-    # Step 2: Merge Neon database
+    # Step 2: Merge Neon database (always use the full merge map)
     if not args.registry_only:
         print("\n--- Step 2: Neon Database ---")
-        merge_neon(merge_map, dry_run=args.dry_run)
+        merge_neon(full_merge_map, dry_run=args.dry_run)
     else:
         print("\n--- Step 2: Neon Database (SKIPPED: --registry-only) ---")
 
     # Step 3: Save audit trail
     if not args.dry_run:
         audit = {
-            "merges_applied": len(merge_map),
-            "merge_map": merge_map,
+            "merges_applied": len(full_merge_map),
+            "merge_map": full_merge_map,
             "details": [
                 {"keep_id": k, "drop_id": d, "reason": r}
                 for k, d, r in CONFIRMED_MERGES
