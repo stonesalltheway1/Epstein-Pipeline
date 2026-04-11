@@ -39,7 +39,7 @@ from epstein_pipeline.models.document import Document, ProcessingResult
 logger = logging.getLogger(__name__)
 
 # ── Default fallback chain for auto mode (olmocr excluded) ──────────────
-_AUTO_CHAIN: list[str] = ["pymupdf", "smoldocling", "surya", "docling"]
+_AUTO_CHAIN: list[str] = ["pymupdf", "granite-docling", "surya", "docling"]
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +383,11 @@ class SmolDoclingBackend(OcrBackendBase):
             return
 
         try:
-            from transformers import AutoProcessor, AutoModelForVision2Seq
+            from transformers import AutoProcessor
+            try:
+                from transformers import AutoModelForImageTextToText as VisionModel
+            except ImportError:
+                from transformers import AutoModelForVision2Seq as VisionModel
             import torch
         except ImportError:
             raise RuntimeError(
@@ -396,9 +400,9 @@ class SmolDoclingBackend(OcrBackendBase):
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         SmolDoclingBackend._processor = AutoProcessor.from_pretrained(model_id)
-        SmolDoclingBackend._model = AutoModelForVision2Seq.from_pretrained(
+        SmolDoclingBackend._model = VisionModel.from_pretrained(
             model_id,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            dtype=torch.float16 if device == "cuda" else torch.float32,
         ).to(device)
 
         logger.info("SmolDocling loaded on %s", device)
@@ -429,9 +433,13 @@ class SmolDoclingBackend(OcrBackendBase):
 
             # Run through SmolDocling
             inputs = processor(images=img, return_tensors="pt").to(device)
+            # Filter to only keys the model accepts (newer transformers
+            # versions add 'rows'/'cols' from the processor which cause errors)
+            generate_kwargs = {k: v for k, v in inputs.items()
+                               if k in ("input_ids", "attention_mask", "pixel_values")}
             with torch.no_grad():
                 generated = model.generate(
-                    **inputs,
+                    **generate_kwargs,
                     max_new_tokens=2048,
                     do_sample=False,
                 )
@@ -457,12 +465,271 @@ class SmolDoclingBackend(OcrBackendBase):
 
 
 # ---------------------------------------------------------------------------
+# Granite-Docling backend (successor to SmolDocling)
+# ---------------------------------------------------------------------------
+
+
+class GraniteDoclingBackend(OcrBackendBase):
+    """OCR using Granite-Docling-258M (IBM, successor to SmolDocling).
+
+    A 258M-parameter VLM with improved OCR accuracy (F1: 0.84 vs 0.80),
+    OCRBench 500 (vs 338), and table TEDS 0.97 (vs 0.82). Fixes the
+    token-repeat loop bug present in SmolDocling. Same ~500MB VRAM footprint.
+
+    Processes pages in batches with periodic VRAM cleanup to avoid the
+    known Docling pipeline memory leak on long documents.
+
+    Requires: pip install transformers torch Pillow pymupdf
+    Model: ibm-granite/granite-docling-258M
+    """
+
+    name = "granite-docling"
+    _model = None
+    _processor = None
+    BATCH_SIZE = 50  # pages per batch before VRAM cleanup
+
+    @classmethod
+    def _ensure_model(cls):
+        if cls._model is not None:
+            return
+
+        try:
+            from transformers import AutoProcessor
+            try:
+                from transformers import AutoModelForImageTextToText as VisionModel
+            except ImportError:
+                from transformers import AutoModelForVision2Seq as VisionModel
+            import torch
+        except ImportError:
+            raise RuntimeError(
+                "transformers and torch are required for Granite-Docling. "
+                "Install with: pip install transformers torch Pillow"
+            )
+
+        model_id = "ibm-granite/granite-docling-258M"
+        logger.info("Loading Granite-Docling-258M...")
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        cls._processor = AutoProcessor.from_pretrained(model_id)
+        cls._model = VisionModel.from_pretrained(
+            model_id,
+            dtype=torch.float16 if device == "cuda" else torch.float32,
+        ).to(device)
+
+        logger.info("Granite-Docling loaded on %s", device)
+
+    def _ocr_page(self, img) -> str:
+        """Run OCR on a single PIL image and return text."""
+        import torch
+
+        model = GraniteDoclingBackend._model
+        processor = GraniteDoclingBackend._processor
+        device = next(model.parameters()).device
+
+        inputs = processor(images=img, return_tensors="pt").to(device)
+        # Filter to only keys the model accepts
+        generate_kwargs = {
+            k: v for k, v in inputs.items()
+            if k in ("input_ids", "attention_mask", "pixel_values")
+        }
+        with torch.no_grad():
+            generated = model.generate(
+                **generate_kwargs,
+                max_new_tokens=4096,
+                do_sample=False,
+            )
+        # Decode without special tokens for clean text output
+        text = processor.batch_decode(generated, skip_special_tokens=True)[0]
+        return text.strip() if text else ""
+
+    def extract(self, path: Path) -> OcrResult:
+        self._ensure_model()
+
+        try:
+            import gc
+            import torch
+            from PIL import Image
+            import fitz
+        except ImportError:
+            raise RuntimeError(
+                "PyMuPDF and Pillow are required for Granite-Docling PDF processing"
+            )
+
+        doc = fitz.open(str(path))
+        total_pages = len(doc)
+        all_text_parts: list[str] = []
+        page_confidences: list[float] = []
+
+        logger.info("Processing %d pages in batches of %d", total_pages, self.BATCH_SIZE)
+
+        for page_num in range(total_pages):
+            page = doc[page_num]
+            # Render page as image at 200 DPI (better quality for OCR)
+            pix = page.get_pixmap(dpi=200)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+            text = self._ocr_page(img)
+
+            if text:
+                all_text_parts.append(text)
+                page_confidences.append(self._heuristic_confidence(text))
+            else:
+                all_text_parts.append("")
+                page_confidences.append(0.0)
+
+            # Periodic VRAM cleanup to avoid memory leak
+            if (page_num + 1) % self.BATCH_SIZE == 0:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+                logger.info(
+                    "Progress: %d/%d pages (%.0f%%)",
+                    page_num + 1, total_pages,
+                    (page_num + 1) / total_pages * 100,
+                )
+
+        doc.close()
+
+        # Final cleanup
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
+        full_text = "\n\n".join(all_text_parts)
+        avg_conf = sum(page_confidences) / max(len(page_confidences), 1)
+
+        return OcrResult(
+            text=full_text,
+            confidence=round(avg_conf, 4),
+            backend_used=self.name,
+            page_confidences=page_confidences,
+        )
+
+
+# ---------------------------------------------------------------------------
+# PaddleOCR backend
+# ---------------------------------------------------------------------------
+
+
+class PaddleOcrBackend(OcrBackendBase):
+    """OCR using PaddleOCR (Baidu PP-OCRv5).
+
+    High-accuracy OCR with PP-OCRv5 detection and recognition models.
+    Runs on CPU (oneDNN) with ~10-15s/page at 200 DPI. Handles scanned
+    documents, complex layouts, and multi-column text well.
+
+    Requires: pip install paddleocr paddlepaddle
+    """
+
+    name = "paddleocr"
+    _ocr = None
+
+    @classmethod
+    def _ensure_model(cls):
+        if cls._ocr is not None:
+            return
+        try:
+            import os
+            os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+            from paddleocr import PaddleOCR
+        except ImportError:
+            raise RuntimeError(
+                "PaddleOCR not installed. Install with: pip install paddleocr paddlepaddle"
+            )
+
+        logger.info("Loading PaddleOCR...")
+        cls._ocr = PaddleOCR(
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            lang="en",
+        )
+        logger.info("PaddleOCR loaded")
+
+    def extract(self, path: Path) -> OcrResult:
+        self._ensure_model()
+
+        try:
+            import fitz
+        except ImportError:
+            raise RuntimeError("PyMuPDF is required for PaddleOCR PDF processing")
+
+        import shutil
+        import tempfile
+
+        doc = fitz.open(str(path))
+        all_text_parts: list[str] = []
+        page_confidences: list[float] = []
+
+        # Use a persistent temp dir (avoids Windows file-locking issues)
+        tmp_dir = Path(tempfile.mkdtemp(prefix="paddleocr_"))
+
+        try:
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                pix = page.get_pixmap(dpi=200)
+
+                tmp_path = tmp_dir / f"page_{page_num:05d}.png"
+                pix.save(str(tmp_path))
+
+                results = list(self._ocr.predict(input=str(tmp_path)))
+                texts: list[str] = []
+                scores: list[float] = []
+
+                for r in results:
+                    if "rec_texts" in r:
+                        texts = list(r["rec_texts"])
+                    if "rec_scores" in r:
+                        scores = list(r["rec_scores"])
+
+                page_text = "\n".join(texts)
+                all_text_parts.append(page_text)
+
+                if scores:
+                    avg_score = sum(scores) / len(scores)
+                    page_confidences.append(round(avg_score, 4))
+                else:
+                    page_confidences.append(self._heuristic_confidence(page_text))
+
+                # Clean up page image immediately to save disk space
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
+                if (page_num + 1) % 50 == 0:
+                    logger.info(
+                        "Progress: %d/%d pages (%.0f%%)",
+                        page_num + 1, len(doc),
+                        (page_num + 1) / len(doc) * 100,
+                    )
+        finally:
+            doc.close()
+            # Clean up temp directory
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except OSError:
+                pass
+
+        full_text = "\n\n".join(all_text_parts)
+        avg_conf = sum(page_confidences) / max(len(page_confidences), 1)
+
+        return OcrResult(
+            text=full_text,
+            confidence=round(avg_conf, 4),
+            backend_used=self.name,
+            page_confidences=page_confidences,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Backend registry
 # ---------------------------------------------------------------------------
 
 _BACKEND_CLASSES: dict[str, type[OcrBackendBase]] = {
     "pymupdf": PyMuPDFBackend,
+    "paddleocr": PaddleOcrBackend,
     "smoldocling": SmolDoclingBackend,
+    "granite-docling": GraniteDoclingBackend,
     "surya": SuryaBackend,
     "olmocr": OlmOcrBackend,
     "docling": DoclingBackend,

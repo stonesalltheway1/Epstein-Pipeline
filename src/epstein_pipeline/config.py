@@ -14,7 +14,9 @@ class OcrBackend(str, Enum):
 
     AUTO = "auto"
     PYMUPDF = "pymupdf"
+    PADDLEOCR = "paddleocr"  # PaddleOCR PP-OCRv5 — high accuracy, CPU, ~12s/page
     SMOLDOCLING = "smoldocling"  # SmolDocling-256M — fast VLM, 0.35s/page, 500MB VRAM
+    GRANITE_DOCLING = "granite-docling"  # Granite-Docling-258M — successor to SmolDocling, higher accuracy
     SURYA = "surya"
     OLMOCR = "olmocr"
     DOCLING = "docling"
@@ -63,7 +65,7 @@ class Settings(BaseSettings):
     ocr_backend: OcrBackend = OcrBackend.AUTO
     ocr_batch_size: int = 50
     ocr_confidence_threshold: float = 0.7  # flag pages below this
-    ocr_fallback_chain: list[str] = ["pymupdf", "surya", "olmocr", "docling"]
+    ocr_fallback_chain: list[str] = ["pymupdf", "granite-docling", "surya", "docling"]
 
     # ── NER settings ─────────────────────────────────────────────────────
     spacy_model: str = "en_core_web_trf"  # upgraded from en_core_web_sm

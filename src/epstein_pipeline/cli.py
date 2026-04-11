@@ -405,23 +405,27 @@ def _download_archive(out_dir: Path) -> None:
 @click.option(
     "--backend",
     "-b",
-    type=click.Choice(["auto", "pymupdf", "surya", "olmocr", "docling"]),
+    type=click.Choice(["auto", "pymupdf", "paddleocr", "smoldocling", "granite-docling", "surya", "olmocr", "docling"]),
     default=None,
-    help="OCR backend (default: auto = pymupdf → surya → docling fallback chain).",
+    help="OCR backend (default: auto = pymupdf → granite-docling → surya → docling fallback chain).",
 )
 def ocr(input_dir: Path, output: Path | None, workers: int | None, backend: str | None) -> None:
     """OCR PDF files using multiple backends.
 
     Backends:
-      auto    - PyMuPDF → Surya → Docling fallback chain (default)
-      pymupdf - Extract existing text layers only (fastest)
-      surya   - Surya OCR with confidence scoring (CPU/GPU)
-      olmocr  - Allen AI olmOCR 2 VLM (GPU required, highest quality)
-      docling - IBM Docling (fallback)
+      auto            - PyMuPDF → Granite-Docling → Surya → Docling fallback chain (default)
+      pymupdf         - Extract existing text layers only (fastest)
+      paddleocr       - PaddleOCR PP-OCRv5 (high accuracy, CPU, ~12s/page)
+      smoldocling     - SmolDocling-256M VLM (0.35s/page, ~500MB VRAM, legacy)
+      granite-docling - Granite-Docling-258M VLM (~500MB VRAM, higher accuracy, replaces SmolDocling)
+      surya           - Surya OCR with confidence scoring (CPU/GPU)
+      olmocr          - Allen AI olmOCR 2 VLM (GPU required, 8GB+ VRAM, highest quality)
+      docling         - IBM Docling (fallback)
 
     \b
     Examples:
       epstein-pipeline ocr ./data/pdfs --output ./output/ocr
+      epstein-pipeline ocr ./pdfs --backend granite-docling
       epstein-pipeline ocr ./pdfs --backend surya --workers 8
       epstein-pipeline ocr ./pdfs --backend olmocr
     """

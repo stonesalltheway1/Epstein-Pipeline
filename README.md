@@ -137,7 +137,8 @@ epstein-pipeline search "financial transactions offshore accounts"
 | Component | Backend | Speed | Accuracy | GPU Required |
 |-----------|---------|-------|----------|--------------|
 | **OCR** | PyMuPDF | Instant | Text layers only | No |
-| **OCR** | SmolDocling-256M | 0.35s/page | High (tables, charts, forms) | Optional (500MB) |
+| **OCR** | Granite-Docling-258M | ~0.35s/page | High (OCRBench 500, tables/charts) | Optional (500MB) |
+| **OCR** | SmolDocling-256M | ~0.35s/page | Good (legacy, superseded by Granite) | Optional (500MB) |
 | **OCR** | Surya | Fast | High (90+ langs) | Optional |
 | **OCR** | olmOCR 2 | Slow | Highest (VLM) | Yes (8GB+) |
 | **OCR** | Docling (IBM) | Medium | High (complex layouts) | No |
@@ -390,7 +391,7 @@ epstein-pipeline audit-persons --person bill-clinton --dry-run
 ## Processors
 
 ### OCR (`processors/ocr.py`)
-Multi-backend OCR with automatic fallback chain: PyMuPDF (text extraction) → SmolDocling-256M (fast VLM, 0.35s/page, tables/charts/forms) → Surya (90+ languages) → Docling (complex layouts). Per-page confidence scoring triggers fallback when quality is low. olmOCR available for explicit selection (GPU-heavy, best for handwriting).
+Multi-backend OCR with automatic fallback chain: PyMuPDF (text extraction) → Granite-Docling-258M (fast VLM, ~500MB VRAM, OCRBench 500) → Surya (90+ languages) → Docling (complex layouts). Per-page confidence scoring triggers fallback when quality is low. SmolDocling-256M still available but superseded by Granite-Docling. olmOCR available for explicit selection (GPU-heavy, best for handwriting). Granite-Docling includes batch processing with periodic VRAM cleanup for long documents.
 
 ### Transcription (`processors/transcriber.py`)
 Dual-backend audio/video transcription:
