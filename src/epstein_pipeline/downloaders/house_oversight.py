@@ -71,9 +71,11 @@ KNOWN_RELEASES: list[OversightRelease] = [
 
 def scrape_release_links(url: str) -> dict[str, list[str]]:
     """Find Google Drive folder IDs and Dropbox URLs on a release page."""
+    import html as _html
     r = requests.get(url, timeout=20, headers={"User-Agent": USER_AGENT})
     r.raise_for_status()
-    html = r.text
+    # Decode HTML entities (&amp; -> &) so URLs are usable as-is
+    html = _html.unescape(r.text)
 
     # Google Drive folder URLs: drive.google.com/drive/folders/ID
     gdrive_ids = set(re.findall(r"drive\.google\.com/drive/folders/([a-zA-Z0-9_\-]+)", html))
@@ -93,7 +95,12 @@ def scrape_release_links(url: str) -> dict[str, list[str]]:
 
 
 def download_gdrive_folder(folder_id: str, output_dir: Path) -> int:
-    """Download a public Google Drive folder using gdown. Returns file count."""
+    """Download a public Google Drive folder using gdown. Returns file count.
+
+    gdown has a hard 50-file limit for anonymous folder downloads. For folders
+    larger than that, use download_gdrive_folder_scrape() which walks the
+    folder's public HTML listing instead.
+    """
     try:
         import gdown
     except ImportError:
@@ -102,15 +109,57 @@ def download_gdrive_folder(folder_id: str, output_dir: Path) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     url = f"https://drive.google.com/drive/folders/{folder_id}"
     logger.info("Downloading Google Drive folder %s → %s", folder_id, output_dir)
-    # gdown.download_folder returns list of downloaded file paths
-    files = gdown.download_folder(
-        url=url,
-        output=str(output_dir),
-        quiet=False,
-        use_cookies=False,
-        remaining_ok=True,
-    )
-    return len(files) if files else 0
+    try:
+        files = gdown.download_folder(
+            url=url,
+            output=str(output_dir),
+            quiet=False,
+            use_cookies=False,
+            remaining_ok=True,
+        )
+        if files:
+            return len(files)
+    except Exception as e:
+        logger.warning("gdown folder download failed: %s; falling back to scrape", e)
+
+    # Fallback: scrape the folder HTML for individual file IDs, download one-by-one
+    return download_gdrive_folder_scrape(folder_id, output_dir)
+
+
+def download_gdrive_folder_scrape(folder_id: str, output_dir: Path) -> int:
+    """Scrape a public Drive folder's HTML for file IDs, download each via gdown.
+
+    This works around gdown's 50-file limit for anonymous folder downloads.
+    Drive's folder view embeds file metadata in JSON within <script> tags.
+    """
+    import gdown, json, re
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    folder_url = f"https://drive.google.com/embeddedfolderview?id={folder_id}#list"
+    r = requests.get(folder_url, timeout=30, headers={"User-Agent": USER_AGENT})
+    r.raise_for_status()
+
+    # Extract file IDs from the embedded folder view
+    # Pattern: data-id="FILEID" or /file/d/FILEID/
+    file_ids = set(re.findall(r'data-id="([a-zA-Z0-9_\-]{20,})"', r.text))
+    file_ids.update(re.findall(r'/file/d/([a-zA-Z0-9_\-]{20,})/', r.text))
+    # Filter out the folder ID itself
+    file_ids.discard(folder_id)
+
+    logger.info("Scraped %d file IDs from folder %s", len(file_ids), folder_id)
+    downloaded = 0
+    for i, fid in enumerate(file_ids, 1):
+        # gdown.download handles individual file URLs
+        dest = output_dir / f"{fid}"  # filename will be auto-detected
+        try:
+            out = gdown.download(id=fid, output=str(dest), quiet=True, use_cookies=False)
+            if out:
+                downloaded += 1
+        except Exception as e:
+            logger.warning("File %s failed: %s", fid, e)
+        if i % 10 == 0:
+            logger.info("  progress: %d/%d files", i, len(file_ids))
+    return downloaded
 
 
 def download_dropbox_folder(dropbox_url: str, output_dir: Path) -> int:

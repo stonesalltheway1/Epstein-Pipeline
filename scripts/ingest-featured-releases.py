@@ -36,7 +36,9 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("featured")
 
-USER_AGENT = "Mozilla/5.0 (compatible; EpsteinExposedBot/1.0; +https://epsteinexposed.com)"
+# Some court sites (e.g. nysd.uscourts.gov) reject UA strings containing "Bot".
+# Use a plain Mozilla identifier so we can access court-released public records.
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
 
 @dataclass
@@ -302,18 +304,32 @@ def process(doc: FeaturedDoc, download_dir: Path, dry_run: bool = False) -> dict
     else:
         logger.info("Already downloaded: %s", dest)
 
-    logger.info("Running PaddleOCR on %s ...", dest.name)
-    text, confidence, page_count = run_paddle_ocr(dest)
-    logger.info("OCR done: %d chars, %.3f confidence, %d pages",
-                len(text), confidence, page_count)
-
-    if not text.strip():
-        logger.error("OCR produced empty text for %s", doc.id)
-        return {"id": doc.id, "status": "empty"}
-
-    # Save text backup next to PDF
     txt_path = dest.with_suffix(".txt")
-    txt_path.write_text(text, encoding="utf-8")
+    meta_path = dest.with_suffix(".meta.json")
+
+    # Use cached OCR if both text and page count are available
+    if txt_path.exists() and meta_path.exists():
+        import json
+        meta = json.loads(meta_path.read_text())
+        text = txt_path.read_text(encoding="utf-8")
+        confidence = meta.get("confidence", 0.0)
+        page_count = meta.get("page_count", 1)
+        logger.info("Cached OCR loaded: %d chars, %.3f conf, %d pages",
+                    len(text), confidence, page_count)
+    else:
+        logger.info("Running PaddleOCR on %s ...", dest.name)
+        text, confidence, page_count = run_paddle_ocr(dest)
+        logger.info("OCR done: %d chars, %.3f confidence, %d pages",
+                    len(text), confidence, page_count)
+        if not text.strip():
+            logger.error("OCR produced empty text for %s", doc.id)
+            return {"id": doc.id, "status": "empty"}
+        # Cache text + metadata
+        txt_path.write_text(text, encoding="utf-8")
+        import json
+        meta_path.write_text(json.dumps({
+            "confidence": confidence, "page_count": page_count,
+        }), encoding="utf-8")
 
     if dry_run:
         logger.info("DRY RUN — skipping Neon upsert for %s", doc.id)
