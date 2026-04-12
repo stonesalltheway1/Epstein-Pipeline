@@ -42,9 +42,53 @@ DATASET_MAP: dict[str, tuple[str, str | None]] = {
     "efta-ds9-gap": ("ds-9-efta-gap-repair", "DS9_EFTA_Gap_Repair.zip"),
     # Dec 19 2025 HR 4405 first compliance batch (3,951 EFTA PDFs, direct access)
     "efta-dec2025": ("efta-19-dec-2025", None),
+    # Big DS9/10/11 mirrors — read zip dirs remotely via HTTP range (no local DL)
+    "efta-ds9-full": ("epstein_library_transparency_act_hr_4405_dataset9_202602", "DataSet 9.zip"),
+    "efta-ds10-full": ("epstein_library_transparency_act_hr_4405_dataset10_202605", "DataSet 10.zip"),
+    "efta-ds11-full": ("epstein_library_transparency_act_hr_4405_dataset11_202602", "DataSet 11.zip"),
+    # doj-ds10 source (17,052 records) has broken efts.fbi.gov URLs — fix with DS10 IA mirror
+    "doj-ds10-fix": ("epstein_library_transparency_act_hr_4405_dataset10_202605", "DataSet 10.zip"),
     # TODO: efta-ds9, efta-ds10, efta-ds11 — would need the full 107GB / 84GB / 27GB
     #  mirrors if we want to fill the remaining 25K DS9 + 486K DS10 gaps
 }
+
+
+class _HttpRangeFile:
+    """File-like wrapper that reads arbitrary byte ranges over HTTP.
+
+    Lets zipfile.ZipFile read the central directory of a remote zip
+    without downloading the whole file.
+    """
+    def __init__(self, url: str):
+        self.url = url
+        r = requests.head(url, timeout=30, allow_redirects=True)
+        r.raise_for_status()
+        self.size = int(r.headers.get("Content-Length"))
+        self.pos = 0
+
+    def seek(self, offset: int, whence: int = 0):
+        if whence == 0:
+            self.pos = offset
+        elif whence == 1:
+            self.pos += offset
+        elif whence == 2:
+            self.pos = self.size + offset
+        return self.pos
+
+    def tell(self) -> int:
+        return self.pos
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0 or self.pos + size > self.size:
+            size = self.size - self.pos
+        if size <= 0:
+            return b""
+        end = self.pos + size - 1
+        r = requests.get(self.url, timeout=120,
+                         headers={"Range": f"bytes={self.pos}-{end}"})
+        r.raise_for_status()
+        self.pos += size
+        return r.content
 
 
 def get_neon_url() -> str:
@@ -77,36 +121,37 @@ def build_efta_url_map(item_id: str, zip_name: str | None) -> dict[str, str]:
     mapping: dict[str, str] = {}
 
     if zip_name:
-        # The IA file listing only shows the zip itself; we need to enumerate
-        # the zip contents via the in-zip URL pattern. We know the structure
-        # from our local extraction.
-        # Pattern: DataSet 1/DataSet 1/VOL00001/IMAGES/0001/EFTA00000001.pdf
-        # For now, we ask the user to provide a local zip to scan, or we can
-        # hit IA's `/{item}/{zip}/` endpoint which returns an HTML file listing.
+        # Prefer a local zip if we have it (faster); else fetch zip directory
+        # remotely via HTTP range requests (no download needed).
+        import zipfile
+        local_zip = Path("archive-org-downloads") / item_id / zip_name
 
-        # Best path: scan the local zip if we have it
-        local_base = Path("archive-org-downloads") / item_id
-        local_zip = local_base / zip_name
+        def enumerate_zip(zf: zipfile.ZipFile, source_label: str) -> None:
+            for name in zf.namelist():
+                if not name.lower().endswith(".pdf"):
+                    continue
+                m = re.search(r"EFTA(\d{8})", name, re.IGNORECASE)
+                if not m:
+                    continue
+                efta_num = m.group(1)
+                ia_url = (
+                    f"https://archive.org/download/{item_id}/"
+                    f"{quote(zip_name, safe='')}/{quote(name, safe='/')}"
+                )
+                mapping[efta_num] = ia_url
+            logger.info("  %s: %d EFTA PDFs mapped", source_label, len(mapping))
+
         if local_zip.exists():
-            import zipfile
             with zipfile.ZipFile(local_zip) as zf:
-                for name in zf.namelist():
-                    if not name.lower().endswith(".pdf"):
-                        continue
-                    m = re.search(r"EFTA(\d{8})", name, re.IGNORECASE)
-                    if not m:
-                        continue
-                    efta_num = m.group(1)
-                    # Build the IA extract URL — encode each path segment
-                    ia_url = (
-                        f"https://archive.org/download/{item_id}/"
-                        f"{quote(zip_name, safe='')}/{quote(name, safe='/')}"
-                    )
-                    mapping[efta_num] = ia_url
-            logger.info("  Scanned local zip: %d EFTA PDFs mapped", len(mapping))
+                enumerate_zip(zf, "Scanned local zip")
         else:
-            logger.error("Local zip not found at %s; can't enumerate", local_zip)
-            return {}
+            # Stream zip directory from IA via HTTP range requests
+            zip_url = (f"https://archive.org/download/{item_id}/"
+                       f"{quote(zip_name, safe='')}")
+            logger.info("  Reading remote zip directory: %s", zip_url)
+            f = _HttpRangeFile(zip_url)
+            with zipfile.ZipFile(f) as zf:
+                enumerate_zip(zf, f"Remote scan ({f.size/1e9:.2f} GB zip)")
     else:
         # Direct file listing on IA (no zip)
         for f in files:
@@ -124,7 +169,8 @@ def build_efta_url_map(item_id: str, zip_name: str | None) -> dict[str, str]:
     return mapping
 
 
-def update_neon(source: str, mapping: dict[str, str], dry_run: bool = False) -> dict:
+def update_neon(source: str, mapping: dict[str, str], dry_run: bool = False,
+                force_replace_justice_gov: bool = False) -> dict:
     conn = psycopg2.connect(get_neon_url())
     cur = conn.cursor()
 
@@ -150,6 +196,13 @@ def update_neon(source: str, mapping: dict[str, str], dry_run: bool = False) -> 
         stats["matched"] += 1
         if pdf_url:
             stats["already_had"] += 1
+            # Swap broken/fragile URLs for IA (resilience)
+            # - efts.fbi.gov: DNS does not resolve, always broken
+            # - justice.gov: gated by Akamai WAF and may vanish
+            if "efts.fbi.gov" in pdf_url:
+                updates.append((doc_id, ia_url))
+            elif force_replace_justice_gov and "justice.gov" in pdf_url:
+                updates.append((doc_id, ia_url))
             continue
         updates.append((doc_id, ia_url))
 
@@ -183,6 +236,8 @@ def main():
     parser.add_argument("--source", help="Single source (e.g. efta-ds1)")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force-replace-justice-gov", action="store_true",
+                        help="Also replace justice.gov pdfUrls with IA (for resilience)")
     args = parser.parse_args()
 
     targets = DATASET_MAP if args.all else {args.source: DATASET_MAP[args.source]} \
@@ -198,10 +253,16 @@ def main():
             continue
         # The ds9-gap key maps to source=efta-ds9 in Neon
         neon_source = "efta-ds9" if source == "efta-ds9-gap" else source
+        # -full keys map to the base DS source
+        if source.endswith("-full"):
+            neon_source = source[:-5]  # strip "-full"
+        if source == "doj-ds10-fix":
+            neon_source = "doj-ds10"
         # Dec 2025 release spans multiple sources — match any EFTA id
         if source == "efta-dec2025":
             neon_source = "__any__"
-        stats = update_neon(neon_source, mapping, dry_run=args.dry_run)
+        stats = update_neon(neon_source, mapping, dry_run=args.dry_run,
+                            force_replace_justice_gov=args.force_replace_justice_gov)
         for k in totals:
             totals[k] += stats[k]
 
