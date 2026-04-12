@@ -630,7 +630,14 @@ class PaddleOcrBackend(OcrBackendBase):
             return
         try:
             import os
+            # Defaults that avoid silent native-library aborts on Windows:
+            # - mkldnn disabled stops PaddlePaddle 3.x's oneDNN init crash
+            #   (see Paddle issues #61724, PaddleOCR #14654) that exits
+            #   with code 0 after "Creating model" with no traceback
+            # - call_stack_level surfaces Paddle C++ errors when they do occur
             os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+            os.environ.setdefault("FLAGS_use_mkldnn", "0")
+            os.environ.setdefault("FLAGS_call_stack_level", "2")
             from paddleocr import PaddleOCR
         except ImportError:
             raise RuntimeError(
