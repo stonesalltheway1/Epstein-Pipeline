@@ -90,6 +90,72 @@ MANIFEST: list[FeaturedDoc] = [
         ),
         tags=("sdny", "maxwell", "grand-jury", "unsealing", "engelmayer"),
     ),
+    # ── Phase 3: Maxwell DOJ interview transcripts (Jul 24-25, 2025) ──
+    FeaturedDoc(
+        id="doj-maxwell-blanche-interview-2025-07-24",
+        url="https://www.justice.gov/storage/audio-files/Interview%20Transcript/Interview%20Transcript%20-%20Maxwell%202025.07.24-cft%20(Redacted).pdf",
+        title="Ghislaine Maxwell DOJ Interview — Day 1 Transcript (Jul 24, 2025, Redacted)",
+        source="doj-maxwell-interview",
+        category="investigation",
+        date="2025-07-24",
+        summary=(
+            "Day 1 of Ghislaine Maxwell's 2-day interview with Deputy Attorney General "
+            "Todd Blanche at FCI Tallahassee, conducted Jul 24-25, 2025. Redacted "
+            "written transcript released by DOJ alongside the 11 WAV audio files on "
+            "Aug 22, 2025. This transcript covers the first day, ~263 pages."
+        ),
+        tags=("maxwell", "doj", "interview", "blanche", "transcript", "redacted"),
+    ),
+    FeaturedDoc(
+        id="doj-maxwell-blanche-interview-2025-07-25",
+        url="https://www.justice.gov/storage/audio-files/Interview%20Transcript/Interview%20Transcript%20-%20Maxwell%202025.07.25-cft%20(Redacted).pdf",
+        title="Ghislaine Maxwell DOJ Interview — Day 2 Transcript (Jul 25, 2025, Redacted)",
+        source="doj-maxwell-interview",
+        category="investigation",
+        date="2025-07-25",
+        summary=(
+            "Day 2 of Ghislaine Maxwell's 2-day interview with Deputy Attorney General "
+            "Todd Blanche at FCI Tallahassee. Redacted written transcript released by "
+            "DOJ alongside the 11 WAV audio files on Aug 22, 2025. This transcript "
+            "covers the second day, ~66 pages."
+        ),
+        tags=("maxwell", "doj", "interview", "blanche", "transcript", "redacted"),
+    ),
+
+    # ── Phase 3: Senate Finance DEA inquiry (Feb 25-26, 2026) ──
+    FeaturedDoc(
+        id="senate-finance-wyden-dea-2026-02-25",
+        url="https://www.finance.senate.gov/imo/media/doc/letter_from_senator_wyden_to_dea_2-25-26.pdf",
+        title="Sen. Wyden Letter to DEA — Mystery Epstein Investigation (Feb 25, 2026)",
+        source="senate-finance",
+        category="investigation",
+        date="2026-02-25",
+        summary=(
+            "Sen. Ron Wyden's Feb 25, 2026 letter to the Drug Enforcement Administration "
+            "requesting information about a previously-undisclosed DEA investigation "
+            "related to Jeffrey Epstein. Released publicly Feb 26, 2026 via Senate "
+            "Finance Committee."
+        ),
+        tags=("senate", "wyden", "dea", "investigation"),
+    ),
+
+    # ── Phase 3: GAO audit referral (Mar 11, 2026) ──
+    FeaturedDoc(
+        id="senate-gao-referral-epstein-redactions-2026-03-11",
+        url="https://www.merkley.senate.gov/wp-content/uploads/GAO-Epstein-Files-Redactions-Review-Letter.pdf",
+        title="Senate GAO Referral — DOJ Epstein Files Redactions Review (Mar 11, 2026)",
+        source="senate-oversight",
+        category="investigation",
+        date="2026-03-11",
+        summary=(
+            "Joint letter from Senators Merkley, Murkowski, Luján, and Durbin to the "
+            "Government Accountability Office requesting an audit of the Department of "
+            "Justice's redaction practices in the Epstein Files Transparency Act "
+            "releases. Raised concerns about the scope and consistency of redactions."
+        ),
+        tags=("senate", "gao", "audit", "redactions", "durbin", "merkley", "murkowski", "lujan"),
+    ),
+
     # ── Known-but-unreachable URLs (Akamai-blocked from this IP at time of capture) ──
     # TODO: retry after DOJ rate-limit expires
     # FeaturedDoc(
@@ -100,6 +166,14 @@ MANIFEST: list[FeaturedDoc] = [
     #     category="legal",
     #     date="2025-12-05",
     # ),
+
+    # ── Pending release — transcripts not yet public as of Apr 12, 2026 ──
+    # Maxwell Feb 9, 2026 House Oversight virtual deposition: only video released
+    #   (Maxwell invoked Fifth); official transcript pending committee publication.
+    # Hillary Clinton Feb 26, 2026 House Oversight testimony: official transcript
+    #   held pending Clinton counsel approval per NPR/NBC; only deposition video
+    #   has been released (Mar 2, 2026). Third-party Rev.com transcript exists but
+    #   unofficial — don't ingest.
 ]
 
 
