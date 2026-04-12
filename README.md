@@ -349,10 +349,22 @@ epstein-pipeline download-depositions --source archive  # Download from Archive.
 epstein-pipeline download-depositions --id vd-maxwell-interview-2025  # Specific deposition
 epstein-pipeline download-depositions --catalog-ds10 ./ds10/extracted  # Catalog DS10 media
 
+# -- External sources (2026 additions) -----------------------------
+python -m epstein_pipeline.downloaders.courtlistener --all      # RECAP via free search API
+python -m epstein_pipeline.downloaders.sec_edgar --all           # SEC EDGAR filings
+python -m epstein_pipeline.downloaders.propublica_nonprofits --all  # Form 990 metadata
+python -m epstein_pipeline.downloaders.house_oversight --all     # House Oversight releases
+python -m epstein_pipeline.downloaders.archive_org --all         # Internet Archive mirrors
+python scripts/ingest-featured-releases.py                       # Curated single-PDF ingests
+python scripts/link-doj-datasets-to-ia.py --all                  # Swap DOJ URLs → archive.org
+python scripts/link-oversight-to-ia.py                           # Link Oversight bates → IA JPGs
+python scripts/parse-oversight-relativity.py                     # Parse .dat metadata
+
 # -- Processing ----------------------------------------------------
-epstein-pipeline ocr ./pdfs/ -o ./out/          # OCR (auto backend: PyMuPDF → SmolDocling → Surya → Docling)
-epstein-pipeline ocr ./pdfs/ --backend surya    # OCR with specific backend
-epstein-pipeline ocr ./pdfs/ --backend smoldocling  # SmolDocling-256M VLM OCR
+epstein-pipeline ocr ./pdfs/ -o ./out/          # OCR (auto: PyMuPDF → PaddleOCR → Granite-Docling → Surya → Docling)
+epstein-pipeline ocr ./pdfs/ --backend paddleocr        # PaddleOCR PP-OCRv5 (primary for scans)
+epstein-pipeline ocr ./pdfs/ --backend granite-docling  # Granite-Docling-258M VLM
+python scripts/ocr-via-cli.py file1.pdf file2.pdf        # CLI workaround for Windows silent-exit bug
 epstein-pipeline transcribe ./media/ -o ./tx/   # Transcribe audio/video (faster-whisper)
 epstein-pipeline transcribe ./media/ --diarize  # With speaker diarization (WhisperX)
 epstein-pipeline extract-entities ./out/ -o ./e/ # NER extraction (spaCy + GLiNER)
@@ -391,7 +403,9 @@ epstein-pipeline audit-persons --person bill-clinton --dry-run
 ## Processors
 
 ### OCR (`processors/ocr.py`)
-Multi-backend OCR with automatic fallback chain: PyMuPDF (text extraction) → Granite-Docling-258M (fast VLM, ~500MB VRAM, OCRBench 500) → Surya (90+ languages) → Docling (complex layouts). Per-page confidence scoring triggers fallback when quality is low. SmolDocling-256M still available but superseded by Granite-Docling. olmOCR available for explicit selection (GPU-heavy, best for handwriting). Granite-Docling includes batch processing with periodic VRAM cleanup for long documents.
+Multi-backend OCR with automatic fallback chain: PyMuPDF (text extraction) → PaddleOCR PP-OCRv5 (~12s/page CPU, 94.5% OmniDocBench) → Granite-Docling-258M (VLM, ~500MB VRAM, OCRBench 500) → Surya (90+ languages) → Docling (complex layouts). Per-page confidence scoring triggers fallback when quality is low. SmolDocling-256M still available but superseded by Granite-Docling. olmOCR available for explicit selection (GPU-heavy, best for handwriting).
+
+**PaddleOCR CLI workaround (Windows)**: `paddlepaddle 3.2.0 + paddleocr 3.4.0` on Windows exhibits a silent-exit bug after the first successful Python-API OCR call (native oneDNN aborts bypass Python's exception machinery). Use `scripts/ocr-via-cli.py` for repeated runs — it spawns the `paddleocr ocr` CLI in a fresh subprocess per document and writes the `.txt`/`.meta.json` sidecar cache files that `scripts/ingest-featured-releases.py` picks up.
 
 ### Transcription (`processors/transcriber.py`)
 Dual-backend audio/video transcription:
@@ -518,11 +532,16 @@ All source data comes from publicly released government records and court docume
 | Source | URL | Content |
 |--------|-----|---------|
 | DOJ EFTA Library | https://www.justice.gov/epstein | 12 datasets, 2M+ files |
-| DOJ Maxwell Interview | https://www.justice.gov/maxwell-interview | 16 WAV files, transcripts |
+| DOJ Maxwell Interview | https://www.justice.gov/maxwell-interview | WAV files + Jul 2025 redacted transcripts |
 | FBI Vault | https://vault.fbi.gov/jeffrey-epstein | FBI records |
-| CourtListener | https://www.courtlistener.com | Court filings |
-| House Oversight | https://oversight.house.gov | Congressional depositions |
-| Archive.org | https://archive.org | Flight logs, video mirrors |
+| CourtListener RECAP | https://www.courtlistener.com | Federal court filings (free-tier search API) |
+| SEC EDGAR | https://data.sec.gov | JPMorgan / Deutsche Bank / BBWI / VSCO disclosures |
+| ProPublica Nonprofit Explorer | https://projects.propublica.org/nonprofits | Form 990 filings (33 Epstein-linked orgs) |
+| Senate Finance Committee | https://www.finance.senate.gov | Wyden SARs + investigation letters |
+| Senate Oversight (Merkley et al.) | https://www.merkley.senate.gov | GAO referrals, redaction audit requests |
+| SDNY Court | https://www.nysd.uscourts.gov | Maxwell grand jury opinions + orders |
+| House Oversight | https://oversight.house.gov | Congressional depositions, estate productions |
+| Archive.org | https://archive.org | Primary mirror for DOJ DS1-DS12 + Oversight batches |
 | C-SPAN | https://www.c-span.org | Deposition recordings |
 | Kaggle | Various | Community-compiled datasets |
 

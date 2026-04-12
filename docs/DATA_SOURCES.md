@@ -69,11 +69,75 @@ Structured email and document datasets.
 
 ## Archive.org Collections
 
-Media files (photos, videos, audio) from various Epstein-related collections.
+**Primary role as of Apr 2026**: Archive.org is the canonical resilient mirror for DOJ DS1-DS12 and House Oversight Committee productions. The site's `pdfUrl` columns migrated 1.4M+ records away from `justice.gov` (Akamai WAF fragility) to `archive.org` (served via IA's zip-extraction URLs plus `/api/pdf-proxy`).
 
-- **Collections:** FBI raid photos, court proceedings, property images
-- **Format:** Mixed (JPEG, MP4, MP3)
-- **Download:** `epstein-pipeline download archive`
+Key items:
+| Identifier | Content | Size |
+|------------|---------|------|
+| `epstein_library_transparency_act_hr_4405_dataset1_20260204` | DOJ DS1 (HR 4405) | 1.3 GB |
+| `epstein_library_transparency_act_hr_4405_dataset8` | DOJ DS8 | 10.7 GB |
+| `epstein_library_transparency_act_hr_4405_dataset9_202602` | DOJ DS9 | 107 GB |
+| `epstein_library_transparency_act_hr_4405_dataset10_202605` | DOJ DS10 | 84 GB |
+| `epstein_library_transparency_act_hr_4405_dataset11_202602` | DOJ DS11 | 27 GB |
+| `data-set-12_20260131` | DOJ DS12 | 120 MB |
+| `oversight-committee-additional-epstein-files` | House Oversight Nov 12, 2025 (23K page JPGs + .dat metadata) | 25 GB |
+| `Epstein_Estate_Documents_-_Seventh_Production` | Oversight Seventh Production | 39 GB |
+| `ds-9-efta-gap-repair` | DS9 gap-fill PDFs | 70 MB |
+| `efta-19-dec-2025` | Dec 19, 2025 HR 4405 batch | 5.1 GB |
+
+Downloader: `downloaders/archive_org.py`, `scripts/link-doj-datasets-to-ia.py`, `scripts/link-oversight-to-ia.py`.
+Metadata parsing for Relativity `.dat` load files: `scripts/parse-oversight-relativity.py`.
+
+Also: media files (photos, videos, audio) from older collections via `epstein-pipeline download archive`.
+
+## CourtListener / RECAP
+
+Federal court filings mirrored from PACER by the Free Law Project.
+
+- **Downloader:** `downloaders/courtlistener.py` — free-tier search API (token required, registration at courtlistener.com/help/api/)
+- **Coverage:** 342 documents across 251 Epstein-related dockets (Giuffre v. Maxwell, USVI v. JPMorgan, Doe 1 v. JPMorgan, U.S. v. Maxwell, Edwards v. Dershowitz, Deutsche Bank settlements, etc.)
+- **Note:** Free tier blocks `/docket-entries/` and `/recap-documents/` list endpoints with 403. Use `/search/?type=r&q=docket_id:{id}` instead.
+
+## SEC EDGAR
+
+Public company disclosures for entities in the Epstein financial network.
+
+- **Downloader:** `downloaders/sec_edgar.py` — free EDGAR API (compliant User-Agent required)
+- **Targets:** JPMorgan Chase (CIK 0000019617), Deutsche Bank (0001159508), Bath & Body Works / L Brands (0000701985), Victoria's Secret (0001856437)
+- **Filings pulled:** 10-K, 13D, 13F, 8-K, Form 4 — currently 80 documents in the database
+
+## ProPublica Nonprofit Explorer
+
+Form 990 filings for Epstein-controlled and associate foundations.
+
+- **Downloader:** `downloaders/propublica_nonprofits.py`
+- **Curated list:** 16 EINs — J Epstein Foundation, C.O.U.Q., Enhanced Education, Wexner Foundation, Wexner Heritage Foundation, Mark Epstein Foundation, Clinton Foundation, Harvard, MIT, Melanoma Research Alliance, etc.
+- **Note:** JSON metadata is rich (officers, grants, revenues); raw 990 PDFs are gated with 403 from ProPublica's proxy even with `Referer` header — metadata-only ingest works well.
+- **Coverage:** 33 orgs + 463 Form 990 filings
+
+## Senate Finance & Oversight
+
+Congressional investigation letters and disclosures — ingested individually via `scripts/ingest-featured-releases.py`.
+
+| Release | Date | Source URL |
+|---------|------|-----------|
+| Wyden SARs (Treasury Suspicious Activity Reports) | 2025-11-21 | whitehouse.senate.gov |
+| Wyden letter to DEA re. mystery Epstein investigation | 2026-02-25 | finance.senate.gov |
+| Merkley / Murkowski / Luján / Durbin GAO audit referral | 2026-03-11 | merkley.senate.gov |
+
+## SDNY Court (Direct)
+
+Orders / opinions published directly by SDNY clerk's office — ingested via featured-releases:
+
+| Release | Docket | Date |
+|---------|--------|------|
+| Maxwell grand jury unsealing opinion | 20-cr-00330 | 2026-01-21 |
+
+## DOJ Maxwell Interview Transcripts (Aug 2025)
+
+- `doj-maxwell-blanche-interview-2025-07-24` — Day 1 (~263pp redacted)
+- `doj-maxwell-blanche-interview-2025-07-25` — Day 2 (~66pp)
+- **Source:** `justice.gov/storage/audio-files/Interview%20Transcript/` (works without auth but serves 403 on landing page to automated UAs)
 
 ## Community Sources
 

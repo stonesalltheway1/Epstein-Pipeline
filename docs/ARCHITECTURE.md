@@ -8,7 +8,7 @@ DOJ EFTA (DS1–DS12) / Kaggle / HuggingFace / Archive.org / justice.gov
     ▼
 ┌──────────────────────────────────────────────────────────┐
 │  OCR (multi-backend fallback chain)                      │
-│  PyMuPDF → SmolDocling-256M → Surya → olmOCR → Docling   │
+│  PyMuPDF → PaddleOCR → Granite-Docling → Surya → Docling │
 │  Per-page confidence scoring, automatic backend selection│
 └──────────────────────┬───────────────────────────────────┘
                        │
@@ -65,10 +65,15 @@ src/epstein_pipeline/
 │   ├── opensanctions.py            # OpenSanctions cross-reference data
 │   ├── icij.py                     # ICIJ Offshore Leaks network data
 │   ├── fec.py                      # FEC political donation records
-│   └── nonprofits.py               # IRS 990 tax-exempt organization data
+│   ├── nonprofits.py               # IRS 990 tax-exempt organization data
+│   ├── propublica_nonprofits.py    # ProPublica Nonprofit Explorer API (richer 990 metadata)
+│   ├── courtlistener.py            # CourtListener / RECAP free-tier search API
+│   ├── sec_edgar.py                # SEC EDGAR filings (JPM, Deutsche Bank, BBWI, etc.)
+│   ├── house_oversight.py          # House Oversight releases (Drive + Dropbox scrapers)
+│   └── archive_org.py              # Internet Archive mirror downloader (DS1-DS12 + Oversight)
 │
 ├── processors/                     # Core processing pipeline
-│   ├── ocr.py                      # Multi-backend OCR (PyMuPDF → SmolDocling → Surya → Docling)
+│   ├── ocr.py                      # Multi-backend OCR (PyMuPDF → PaddleOCR → Granite-Docling → Surya)
 │   ├── pymupdf_extractor.py        # PyMuPDF-specific text/image extraction
 │   ├── transcriber.py              # Audio/video transcription (faster-whisper / WhisperX + pyannote)
 │   ├── entities.py                 # spaCy + GLiNER NER with person registry matching
@@ -119,17 +124,21 @@ src/epstein_pipeline/
 
 ### Multi-Backend OCR with Fallback Chain
 
-The pipeline supports five OCR backends because no single engine handles all document types well:
+The pipeline supports seven OCR backends because no single engine handles all document types well:
 
 | Backend | Strengths | Weaknesses |
 |---|---|---|
 | **PyMuPDF** | Instant, extracts existing text layers | Cannot OCR scanned images |
-| **SmolDocling-256M** | Fast (0.35s/page), tables/charts/forms, only 500MB VRAM | Newer model, less tested |
+| **PaddleOCR PP-OCRv5** | 94.5% OmniDocBench; ~12s/page CPU; production-grade | Known Windows silent-exit bug after first call (see CLI workaround) |
+| **Granite-Docling-258M** | VLM accuracy (OCRBench 500), ~500MB VRAM, structure-aware | Requires GPU for reasonable speed |
+| **SmolDocling-256M** | Fast (0.35s/page), 500MB VRAM | Superseded by Granite-Docling; kept for compatibility |
 | **Surya** | Fast, 90+ languages, good accuracy | Misses some complex layouts |
 | **olmOCR 2** | Highest accuracy (VLM-based) | Requires 8GB+ GPU |
 | **Docling (IBM)** | Understands tables/layout, no GPU | Slower than Surya |
 
-The default strategy (`--backend auto`) chains: PyMuPDF → SmolDocling → Surya → Docling. Per-page confidence scoring triggers fallback when quality is low. olmOCR is excluded from auto mode due to GPU cost; select explicitly with `--backend olmocr`.
+The default strategy (`--backend auto`) chains: PyMuPDF → PaddleOCR → Granite-Docling → Surya → Docling. Per-page confidence scoring triggers fallback when quality is low. olmOCR is excluded from auto mode due to GPU cost; select explicitly with `--backend olmocr`.
+
+**Windows PaddleOCR workaround**: PaddlePaddle 3.2.0 + PaddleOCR 3.4.0 on Windows silently exits after the first Python-API OCR call (native oneDNN `std::abort` bypasses Python traceback). For reliable batch OCR, use `scripts/ocr-via-cli.py` — a thin wrapper that spawns the `paddleocr ocr` CLI in a fresh subprocess per document and writes the same `.txt` + `.meta.json` sidecar cache that `scripts/ingest-featured-releases.py` reads on re-run.
 
 ### Three-Pass Deduplication
 

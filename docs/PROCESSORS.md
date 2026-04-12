@@ -4,22 +4,46 @@
 
 Multi-backend PDF text extraction with automatic fallback chain and per-page confidence scoring.
 
-**Auto mode chain:** PyMuPDF → SmolDocling-256M → Surya → Docling
+**Auto mode chain:** PyMuPDF → PaddleOCR → Granite-Docling-258M → Surya → Docling
 
 | Backend | Speed | GPU | Best For |
 |---------|-------|-----|----------|
 | `pymupdf` | Instant | No | Digital PDFs with text layers |
-| `smoldocling` | 0.35s/page | Optional (500MB) | Scanned docs, tables, charts, forms |
+| `paddleocr` | ~12s/page | No | Scanned docs (94.5% OmniDocBench); primary fallback |
+| `granite-docling` | VLM | Optional (500MB) | Structure-aware (tables, forms, charts) |
+| `smoldocling` | 0.35s/page | Optional (500MB) | Legacy — superseded by Granite-Docling |
 | `surya` | Fast | Optional | 90+ languages, structured output |
 | `olmocr` | Slow | Yes (8GB+) | Handwriting, degraded scans |
 | `docling` | Medium | No | Complex layouts, table extraction |
 
 ```bash
-epstein-pipeline ocr ./pdfs --backend auto          # Automatic fallback chain
-epstein-pipeline ocr ./pdfs --backend smoldocling   # SmolDocling-256M VLM
-epstein-pipeline ocr ./pdfs --backend surya         # Surya (90+ languages)
-epstein-pipeline ocr ./pdfs --workers 8             # Parallel processing
+epstein-pipeline ocr ./pdfs --backend auto              # Automatic fallback chain
+epstein-pipeline ocr ./pdfs --backend paddleocr         # PaddleOCR PP-OCRv5
+epstein-pipeline ocr ./pdfs --backend granite-docling   # Granite-Docling-258M VLM
+epstein-pipeline ocr ./pdfs --backend surya             # Surya (90+ languages)
+epstein-pipeline ocr ./pdfs --workers 8                 # Parallel processing
 ```
+
+### PaddleOCR CLI workaround (Windows)
+
+`paddlepaddle 3.2.0` + `paddleocr 3.4.0` on Windows exhibits a silent-exit bug
+after the first successful Python-API OCR call: the native oneDNN layer calls
+`std::abort()` / `ExitProcess(0)` and bypasses Python's exception machinery
+entirely (no traceback, no error message). Known matches: Paddle issues
+#61724, #60251, PaddleOCR #14654/#14892.
+
+The `paddleocr` CLI runs in a fresh subprocess per invocation and does not
+hit this bug. For reliable batch work, use the wrapper:
+
+```bash
+python scripts/ocr-via-cli.py path/to/a.pdf path/to/b.pdf
+```
+
+This spawns the CLI per doc, collects the per-page JSON outputs, and writes
+the `.txt` + `.meta.json` sidecar cache files that
+`scripts/ingest-featured-releases.py` reads on resume. Env flags tried but
+insufficient: `FLAGS_use_mkldnn=0`, `FLAGS_call_stack_level=2`,
+`PYTHONFAULTHANDLER=1`.
 
 ## Transcription (`processors/transcriber.py`)
 
