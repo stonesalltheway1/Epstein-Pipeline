@@ -37,10 +37,13 @@ DATASET_MAP: dict[str, tuple[str, str | None]] = {
     "efta-ds1": ("epstein_library_transparency_act_hr_4405_dataset1_20260204",
                  "DataSet 1.zip"),
     "efta-ds8": ("epstein_library_transparency_act_hr_4405_dataset8", "DataSet 8.zip"),
-    # Add more as we identify them:
-    # "efta-ds9": ("epstein_library_transparency_act_hr_4405_dataset9_202602", None),
-    # "efta-ds10": ("epstein_library_transparency_act_hr_4405_dataset10_202605", None),
-    # "efta-ds11": ("epstein_library_transparency_act_hr_4405_dataset11_202602", None),
+    "efta-ds12": ("data-set-12_20260131", "DataSet 12.zip"),
+    # DS9 gap-repair: only covers 11 specific corrupted-then-fixed files
+    "efta-ds9-gap": ("ds-9-efta-gap-repair", "DS9_EFTA_Gap_Repair.zip"),
+    # Dec 19 2025 HR 4405 first compliance batch (3,951 EFTA PDFs, direct access)
+    "efta-dec2025": ("efta-19-dec-2025", None),
+    # TODO: efta-ds9, efta-ds10, efta-ds11 — would need the full 107GB / 84GB / 27GB
+    #  mirrors if we want to fill the remaining 25K DS9 + 486K DS10 gaps
 }
 
 
@@ -125,7 +128,11 @@ def update_neon(source: str, mapping: dict[str, str], dry_run: bool = False) -> 
     conn = psycopg2.connect(get_neon_url())
     cur = conn.cursor()
 
-    cur.execute('''SELECT id, "pdfUrl" FROM documents WHERE source = %s''', (source,))
+    if source == "__any__":
+        # Cross-source: match any record whose id contains an EFTA number
+        cur.execute('''SELECT id, "pdfUrl" FROM documents WHERE id ~ 'efta' ''')
+    else:
+        cur.execute('''SELECT id, "pdfUrl" FROM documents WHERE source = %s''', (source,))
     rows = cur.fetchall()
     logger.info("Source=%s: %d rows in Neon", source, len(rows))
 
@@ -189,7 +196,12 @@ def main():
         mapping = build_efta_url_map(item_id, zip_name)
         if not mapping:
             continue
-        stats = update_neon(source, mapping, dry_run=args.dry_run)
+        # The ds9-gap key maps to source=efta-ds9 in Neon
+        neon_source = "efta-ds9" if source == "efta-ds9-gap" else source
+        # Dec 2025 release spans multiple sources — match any EFTA id
+        if source == "efta-dec2025":
+            neon_source = "__any__"
+        stats = update_neon(neon_source, mapping, dry_run=args.dry_run)
         for k in totals:
             totals[k] += stats[k]
 
